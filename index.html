@@ -131,7 +131,7 @@
   .mute-btn.muted { background: var(--accent-2); color: #fff; border-color: var(--accent-2); opacity: 0.9; }
   .vol { width: 100% !important; }
 
-  .steps { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 4px; padding: 7px; min-width: 540px; }
+  .steps { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 4px; padding: 7px; }
 
   .cell {
     aspect-ratio: 1 / 1.15; min-height: 30px;
@@ -220,6 +220,125 @@
     padding: 9px 12px; font-size: 0.78rem; cursor: pointer;
   }
   select:hover { border-color: var(--accent); }
+  /* ---------- Bouton compléter ---------- */
+  .btn-suggest {
+    background: linear-gradient(135deg, #1a1a2e, #16213e);
+    color: var(--accent); border-color: var(--accent);
+    font-weight: 700; white-space: nowrap;
+  }
+  .btn-suggest:hover { box-shadow: var(--glow) var(--accent); color: var(--accent); }
+  .btn-suggest.loading { opacity: 0.6; cursor: wait; }
+
+  /* ============================================================
+     RESPONSIVE — MODE PORTRAIT / SMARTPHONE
+     Breakpoints :
+       ≤ 600px  : téléphone portrait, layout vertical
+       601-900px: tablette/paysage téléphone, layout intermédiaire
+     ============================================================ */
+
+  @media (max-width: 900px) {
+    .wrap { padding: 16px 12px 60px; }
+    header { margin-bottom: 14px; padding-bottom: 14px; gap: 10px; }
+    .transport { padding: 10px 12px; gap: 8px; margin-bottom: 12px; }
+    .fx-bar input[type=range] { width: 70px; }
+    #viz { width: 140px; height: 34px; }
+    .transport input[type=range] { width: 90px; }
+    .presets { padding: 10px 12px; margin-bottom: 14px; }
+  }
+
+  @media (max-width: 600px) {
+
+    /* ---- Général ---- */
+    .wrap { padding: 12px 8px 70px; }
+
+    /* ---- Header ---- */
+    header { flex-direction: column; align-items: flex-start; gap: 8px; margin-bottom: 10px; padding-bottom: 10px; }
+    .logo { font-size: 1.8rem; }
+    .tagline { font-size: 0.6rem; }
+    .add-row { width: 100%; display: flex; gap: 6px; }
+    .add-row select { flex: 1; font-size: 0.72rem; padding: 8px 6px; }
+
+    /* ---- Transport : flex vertical simple ---- */
+    .transport {
+      flex-direction: column; align-items: stretch;
+      padding: 10px 10px; gap: 8px; margin-bottom: 8px;
+    }
+    .transport .spacer { display: none; }
+
+    /* ligne 1 : play + tempo + master sur une rangée */
+    #playBtn { order: 0; align-self: flex-start; }
+    .transport .ctrl-group { order: 1; flex-direction: row; width: 100%; gap: 8px; }
+    .transport .ctrl-group label { white-space: nowrap; font-size: 0.6rem; }
+    .transport input[type=range] { flex: 1; width: auto; min-width: 0; }
+    .bpm-val { font-size: 0.8rem; min-width: 30px; }
+
+    /* ligne 2 : boutons d'action en flex-wrap */
+    .transport-actions { display: flex; flex-wrap: wrap; gap: 6px; width: 100%; order: 2; }
+    #randomBtn, #clearBtn, #loopCount, #exportAudioBtn {
+      flex: 1; font-size: 0.68rem; padding: 8px 4px; min-width: 60px;
+    }
+
+    /* ---- Barre effets ---- */
+    .fx-bar {
+      flex-direction: column; padding: 10px 10px;
+      margin-top: -6px; gap: 8px;
+    }
+    .fx-bar .spacer { display: none; }
+    .fx-bar .ctrl-group { width: 100%; flex-direction: row; gap: 8px; }
+    .fx-bar .ctrl-group label { white-space: nowrap; width: 52px; font-size: 0.62rem; }
+    .fx-bar input[type=range] { flex: 1; width: auto; min-width: 0; }
+    #suggestBtn { width: 100%; font-size: 0.78rem; padding: 10px; }
+    #viz { width: 100%; height: 36px; }
+
+    /* ---- Mes morceaux ---- */
+    .presets { padding: 10px 10px; margin-bottom: 10px; }
+    .presets-bar { gap: 6px; }
+    .presets-title { font-size: 0.72rem; width: 100%; }
+    #presetName { min-width: 0; width: 100%; font-size: 0.72rem; padding: 8px 8px; }
+    .btn-save, #exportBtn, #importBtn { font-size: 0.68rem; padding: 8px 8px; }
+    .preset-chip .load { font-size: 0.68rem; padding: 7px 8px; max-width: 150px; }
+    .preset-chip .chip-act { padding: 7px 7px; font-size: 0.62rem; }
+
+    /* ---- Grille : en-tête AU-DESSUS des cases ----
+       Chaque piste = colonne : header en haut, cases en-dessous.
+       Les cases prennent toute la largeur disponible. */
+    .seq { overflow-x: hidden; border-radius: 6px; }
+    .track {
+      display: flex !important;
+      flex-direction: column;
+    }
+    .track-head {
+      border-right: none !important;
+      border-bottom: 1px solid var(--line);
+      padding: 7px 10px;
+      grid-template-columns: 10px 1fr 72px 26px 26px;
+      gap: 5px;
+    }
+    .track-name { font-size: 0.68rem; }
+    .mute-btn { padding: 5px 2px; font-size: 0.62rem; }
+
+    /* cases : largeur libre, hauteur généreuse pour les doigts */
+    .steps {
+      display: grid !important;
+      grid-auto-flow: column;
+      grid-auto-columns: 1fr;
+      min-width: 0 !important;
+      width: 100%;
+      gap: 3px; padding: 5px 8px;
+    }
+    .cell { min-height: 36px; border-radius: 4px; aspect-ratio: auto; }
+
+    /* footer */
+    .footer-bar { margin-top: 12px; }
+    .hint { font-size: 0.6rem; }
+  }
+
+  /* très petits écrans */
+  @media (max-width: 360px) {
+    .logo { font-size: 1.5rem; }
+    .cell { min-height: 30px; }
+    .track-head { grid-template-columns: 10px 1fr 58px 24px 24px; }
+  }
 </style>
 </head>
 <body>
@@ -253,15 +372,17 @@
       <input type="range" id="master" min="0" max="100" value="80">
     </div>
     <div class="spacer"></div>
-    <button id="randomBtn" title="Générer un motif aléatoire">🎲 aléatoire</button>
-    <button id="clearBtn">⌫ effacer</button>
-    <select id="loopCount" title="Nombre de boucles à enregistrer">
-      <option value="1">1 boucle</option>
-      <option value="2" selected>2 boucles</option>
-      <option value="4">4 boucles</option>
-      <option value="8">8 boucles</option>
-    </select>
-    <button id="exportAudioBtn">♪ export audio</button>
+    <div class="transport-actions">
+      <button id="randomBtn" title="Générer un motif aléatoire">🎲 aléatoire</button>
+      <button id="clearBtn">⌫ effacer</button>
+      <select id="loopCount" title="Nombre de boucles à enregistrer">
+        <option value="1">1 boucle</option>
+        <option value="2" selected>2 boucles</option>
+        <option value="4">4 boucles</option>
+        <option value="8">8 boucles</option>
+      </select>
+      <button id="exportAudioBtn">♪ export audio</button>
+    </div>
   </div>
 
   <div class="transport fx-bar">
@@ -279,7 +400,8 @@
       <input type="range" id="fxSwing" min="0" max="100" value="0">
     </div>
     <div class="spacer"></div>
-    <canvas id="viz" width="240" height="40"></canvas>
+    <button id="suggestBtn" class="btn-suggest" title="Analyse ton morceau et complète les pistes vides intelligemment">🎵 compléter</button>
+    <canvas id="viz" width="200" height="40"></canvas>
   </div>
 
   <div class="presets" id="presets">
@@ -297,7 +419,7 @@
   <div class="seq" id="seq"></div>
 
   <div class="footer-bar">
-    <span class="hint">Clique sur les cases pour placer un son. Tu peux modifier pendant la lecture — ça tourne en boucle.</span>
+    <span class="hint">Clique sur les cases pour placer un son · Espace = play/stop · 🎵 compléter = suggestion musicale intelligente</span>
   </div>
 </div>
 
@@ -1194,6 +1316,217 @@ document.getElementById('importFile').addEventListener('change', e => {
     e.target.value = ''; // permet de réimporter le même fichier plus tard
   };
   reader.readAsText(file);
+});
+
+
+/* ============================================================
+   🎵 COMPLÉTER — Suggestion musicale basée sur des règles
+   Analyse le morceau actuel et propose des pistes cohérentes
+   pour remplir les instruments absents ou vides.
+   ============================================================ */
+
+// Toutes les gammes/modes utiles (demi-tons depuis la tonique)
+const SCALES = {
+  major:      [0,2,4,5,7,9,11],
+  minor:      [0,2,3,5,7,8,10],
+  pentatonic: [0,2,4,7,9],
+  blues:      [0,3,5,6,7,10],
+  dorian:     [0,2,3,5,7,9,10],
+};
+
+// Détermine le style à partir du BPM et des instruments présents
+function detectStyle() {
+  const bpm = state.bpm;
+  const keys = new Set(state.tracks.map(t => t.soundKey));
+  if (bpm < 85)  return 'ambient';
+  if (bpm < 100) return 'hiphop';
+  if (bpm > 125) return keys.has('kick') ? 'techno' : 'house';
+  return 'house';
+}
+
+// Renvoie les demi-tons de gamme utilisés dans les pistes mélodiques existantes
+function detectUsedNotes() {
+  const used = new Set();
+  state.tracks.forEach(t => {
+    const m = t.soundKey.match(/^note_(\d+)$/);
+    if (m && t.pattern.some(Boolean)) used.add(parseInt(m[1]) % 12);
+    // clés legacy : c4=0, d4=2, e4=4, f4=5, g4=7, a4=9, b4=11, c5=0
+    const legacyMap = {c4:0,d4:2,e4:4,f4:5,g4:7,a4:9,b4:11,c5:0,g4:7};
+    if (legacyMap[t.soundKey] !== undefined && t.pattern.some(Boolean))
+      used.add(legacyMap[t.soundKey]);
+  });
+  return used;
+}
+
+// Choisit la gamme la plus cohérente avec les notes utilisées
+function detectScale(usedNotes) {
+  if (usedNotes.size === 0) return { tonic: 0, scale: SCALES.major, name: 'majeure' };
+  let best = { score: -1, tonic: 0, scale: SCALES.major, name: 'majeure' };
+  for (const [name, intervals] of Object.entries(SCALES)) {
+    for (let tonic = 0; tonic < 12; tonic++) {
+      const scaleNotes = new Set(intervals.map(i => (i + tonic) % 12));
+      let score = 0;
+      usedNotes.forEach(n => { if (scaleNotes.has(n)) score++; });
+      if (score > best.score) best = { score, tonic, scale: intervals, name };
+    }
+  }
+  return best;
+}
+
+// Génère un pattern à partir d'une liste de positions
+function makePat(positions, S) {
+  const p = new Array(S).fill(false);
+  positions.forEach(i => { if (i < S) p[i] = true; });
+  return p;
+}
+
+// Renvoie les positions actives d'une piste existante
+function getActive(soundKey) {
+  const t = state.tracks.find(t => t.soundKey === soundKey);
+  return t ? t.pattern.map((v,i) => v ? i : -1).filter(i => i>=0) : null;
+}
+
+// Vérifie si une clé est déjà présente et a au moins un pas actif
+function hasActive(soundKey) {
+  const t = state.tracks.find(t => t.soundKey === soundKey);
+  return t && t.pattern.some(Boolean);
+}
+
+// Trouve des notes dans la gamme détectée, proches d'une octave donnée
+function scaleNotesInRange(scaleInfo, startSemi, count) {
+  const notes = [];
+  for (let oct = 0; oct < 2 && notes.length < count; oct++) {
+    scaleInfo.scale.forEach(interval => {
+      const semi = scaleInfo.tonic + interval + oct * 12;
+      if (semi >= startSemi && semi < startSemi + 24) {
+        const key = 'note_' + semi;
+        if (SOUND_BANK[key]) notes.push(key);
+      }
+    });
+  }
+  return notes.slice(0, count);
+}
+
+// Construit des suggestions selon le style et l'analyse du morceau
+function buildSuggestions(style, scaleInfo, S) {
+  const suggestions = []; // { soundKey, pattern, gain, label }
+  const kickActive  = getActive('kick');
+  const bassActive  = getActive('bass');
+
+  // ---- Helpers de patterns ----
+  function add(key, positions, gain=0.8, label='') {
+    if (!SOUND_BANK[key]) return;
+    suggestions.push({ soundKey: key, pattern: makePat(positions, S), gain, label });
+  }
+
+  const half = S / 2;
+
+  // ---- Règles par style ----
+  if (style === 'hiphop') {
+    if (!hasActive('kick'))    add('kick',    [0, Math.floor(S*0.4), Math.floor(S*0.65)], 0.95, 'kick boom bap');
+    if (!hasActive('snare'))   add('snare',   [4, 12].filter(i=>i<S), 0.85, 'snare contretemps');
+    if (!hasActive('hat'))     add('hat',     Array.from({length:S},(_, i)=>i).filter(i=>i%2===0), 0.5, 'hi-hat doubles');
+    if (!hasActive('openhat')) add('openhat', [S-2].filter(i=>i<S), 0.45, 'open hat fin');
+    if (!hasActive('bass') && kickActive) {
+      const bpos = [...kickActive, ...(kickActive.map(i=>(i+2)%S))].sort((a,b)=>a-b);
+      add('bass', [...new Set(bpos)], 0.88, 'basse qui suit le kick');
+    }
+    // mélodie si gamme détectée
+    const mel = scaleNotesInRange(scaleInfo, 0, 3);
+    mel.forEach((key, i) => {
+      if (!hasActive(key)) add(key, [i*4, i*4+half].filter(v=>v<S), 0.6, 'mélodie hip-hop');
+    });
+  }
+
+  else if (style === 'ambient') {
+    if (!hasActive('kick'))    add('kick',    [0, half], 0.65, 'kick doux');
+    if (!hasActive('openhat')) add('openhat', [4, 12].filter(i=>i<S), 0.3, 'open hat ambiant');
+    if (!hasActive('bass'))    add('bass',    [0, half], 0.7, 'basse tenue');
+    // nappes mélodiques : arpège lent sur les notes de la gamme
+    const mel = scaleNotesInRange(scaleInfo, 0, 5);
+    mel.forEach((key, i) => {
+      if (!hasActive(key)) add(key, [i * Math.floor(S/5)].filter(v=>v<S), 0.5, 'nappe mélodique');
+    });
+  }
+
+  else if (style === 'techno') {
+    if (!hasActive('kick'))    add('kick',    [0,4,8,12].filter(i=>i<S), 0.98, 'kick four-on-the-floor');
+    if (!hasActive('clap'))    add('clap',    [4,12].filter(i=>i<S), 0.72, 'clap');
+    if (!hasActive('hat'))     add('hat',     [2,6,10,14].filter(i=>i<S), 0.5, 'hat offbeat');
+    if (!hasActive('openhat')) add('openhat', [3,7,11,15].filter(i=>i<S), 0.45, 'open hat contretemps');
+    if (!hasActive('bass'))    add('bass',    Array.from({length:S},(_,i)=>i).filter(i=>i%2===0), 0.9, 'basse techno');
+    const mel = scaleNotesInRange(scaleInfo, 12, 2); // notes hautes en techno
+    mel.forEach((key, i) => {
+      if (!hasActive(key)) add(key, [1+i*4,5+i*4,9+i*4,13+i*4].filter(v=>v<S), 0.48, 'mélodie techno');
+    });
+  }
+
+  else { // house (défaut)
+    if (!hasActive('kick'))    add('kick',    [0,4,8,12].filter(i=>i<S), 0.95, 'kick four-on-the-floor');
+    if (!hasActive('snare'))   add('snare',   [4,12].filter(i=>i<S), 0.85, 'snare house');
+    if (!hasActive('clap'))    add('clap',    [4,12].filter(i=>i<S), 0.78, 'clap doublé');
+    if (!hasActive('hat'))     add('hat',     [2,6,10,14].filter(i=>i<S), 0.55, 'hat offbeat');
+    if (!hasActive('openhat')) add('openhat', [7,15].filter(i=>i<S), 0.5, 'open hat phrase');
+    if (!hasActive('bass')) {
+      add('bass', [0,3,6,8,11,14].filter(i=>i<S), 0.88, 'basse house groovy');
+    }
+    // arpège mélodique house (C-E-G-C ascendant)
+    const mel = scaleNotesInRange(scaleInfo, 0, 4);
+    mel.forEach((key, i) => {
+      if (!hasActive(key)) add(key, [i*2, i*2+half].filter(v=>v<S), 0.65, 'arpège house');
+    });
+  }
+
+  return suggestions;
+}
+
+// Applique les suggestions : ajoute les pistes manquantes, active les patterns
+function applySuggestions(suggestions) {
+  if (suggestions.length === 0) return 0;
+  let added = 0, filled = 0;
+  suggestions.forEach(s => {
+    let track = state.tracks.find(t => t.soundKey === s.soundKey);
+    const isNew = !track;
+    if (isNew) {
+      track = { id: crypto.randomUUID(), soundKey: s.soundKey, gain: s.gain, muted: false, pattern: new Array(state.steps).fill(false) };
+      state.tracks.push(track);
+      added++;
+    }
+    // ne remplace que les pistes vides
+    if (!track.pattern.some(Boolean)) {
+      track.pattern = s.pattern.slice(0, state.steps);
+      if (!isNew) filled++;
+    }
+  });
+  return added + filled;
+}
+
+document.getElementById('suggestBtn').addEventListener('click', () => {
+  if (state.tracks.length === 0) { toast('Ajoute d\'abord quelques instruments pour que je puisse analyser le style !'); return; }
+  const btn = document.getElementById('suggestBtn');
+  btn.classList.add('loading'); btn.textContent = '🎵 analyse…';
+
+  // léger délai pour laisser le navigateur rendre l'état "loading"
+  setTimeout(() => {
+    try {
+      const style      = detectStyle();
+      const usedNotes  = detectUsedNotes();
+      const scaleInfo  = detectScale(usedNotes);
+      const suggestions = buildSuggestions(style, scaleInfo, state.steps);
+      const count = applySuggestions(suggestions);
+      render();
+      if (count > 0) {
+        const styleLabel = {hiphop:'Hip-Hop',ambient:'Ambient',techno:'Techno',house:'House'}[style] || style;
+        toast('🎵 ' + count + ' piste(s) ajoutée(s) · Style détecté : ' + styleLabel + ' · Gamme : ' + scaleInfo.name);
+      } else {
+        toast('Toutes les pistes sont déjà remplies — essaie d\'effacer quelques lignes d\'abord');
+      }
+    } catch(e) {
+      toast('⚠ Impossible de générer une suggestion');
+    } finally {
+      btn.classList.remove('loading'); btn.textContent = '🎵 compléter';
+    }
+  }, 50);
 });
 
 

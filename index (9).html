@@ -1,0 +1,1015 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PULSE — Séquenceur</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Major+Mono+Display&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0a0a0f;
+    --panel: #12121c;
+    --panel-light: #1b1b29;
+    --line: #2a2a3d;
+    --text: #e8e8f0;
+    --muted: #6b6b85;
+    --accent: #00ffc8;
+    --accent-2: #ff3d8b;
+    --accent-3: #ffd23d;
+    --beat-marker: #2f2f47;
+    --glow: 0 0 12px;
+    --radius: 7px;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  html, body {
+    background:
+      radial-gradient(circle at 15% 0%, rgba(0,255,200,0.06), transparent 40%),
+      radial-gradient(circle at 85% 100%, rgba(255,61,139,0.06), transparent 40%),
+      var(--bg);
+    color: var(--text);
+    font-family: 'Space Mono', monospace;
+    min-height: 100vh;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  body::before {
+    content: "";
+    position: fixed; inset: 0;
+    background-image:
+      repeating-linear-gradient(0deg, rgba(255,255,255,0.015) 0px, rgba(255,255,255,0.015) 1px, transparent 1px, transparent 3px);
+    pointer-events: none; z-index: 9999;
+  }
+
+  .wrap { max-width: 1150px; margin: 0 auto; padding: 28px 20px 80px; }
+
+  /* ---------- Header ---------- */
+  header {
+    display: flex; align-items: flex-end; justify-content: space-between;
+    flex-wrap: wrap; gap: 16px; margin-bottom: 24px;
+    border-bottom: 1px solid var(--line); padding-bottom: 20px;
+  }
+  .logo {
+    font-family: 'Major Mono Display', monospace;
+    font-size: clamp(2rem, 6vw, 3.4rem);
+    line-height: 0.9; letter-spacing: 2px;
+    background: linear-gradient(120deg, var(--accent), var(--accent-2));
+    -webkit-background-clip: text; background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+  .tagline { color: var(--muted); font-size: 0.72rem; letter-spacing: 3px; text-transform: uppercase; margin-top: 6px; }
+
+  /* ---------- Transport ---------- */
+  .transport {
+    display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+    background: var(--panel); border: 1px solid var(--line);
+    border-radius: var(--radius); padding: 14px 18px; margin-bottom: 22px;
+  }
+  button {
+    font-family: 'Space Mono', monospace; cursor: pointer;
+    background: var(--panel-light); color: var(--text);
+    border: 1px solid var(--line); border-radius: var(--radius);
+    padding: 9px 14px; font-size: 0.8rem; letter-spacing: 1px;
+    transition: all 0.15s ease;
+  }
+  button:hover { border-color: var(--accent); color: var(--accent); }
+  button:active { transform: translateY(1px); }
+
+  .btn-play {
+    background: var(--accent); color: #06120e; border-color: var(--accent);
+    font-weight: 700; min-width: 92px;
+  }
+  .btn-play:hover { color: #06120e; box-shadow: var(--glow) var(--accent); }
+  .btn-play.playing { background: var(--accent-2); border-color: var(--accent-2); }
+  .btn-play.playing:hover { box-shadow: var(--glow) var(--accent-2); }
+
+  .ctrl-group { display: flex; align-items: center; gap: 9px; }
+  .ctrl-group label { color: var(--muted); font-size: 0.7rem; text-transform: uppercase; letter-spacing: 1.5px; }
+  .bpm-val { font-weight: 700; color: var(--accent-3); min-width: 36px; text-align: right; font-size: 0.95rem; }
+
+  input[type=range] { -webkit-appearance: none; appearance: none; height: 4px; border-radius: 4px; background: var(--line); cursor: pointer; }
+  input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 15px; height: 15px; border-radius: 50%; background: var(--accent-3); box-shadow: var(--glow) var(--accent-3); }
+  input[type=range]::-moz-range-thumb { width: 15px; height: 15px; border: none; border-radius: 50%; background: var(--accent-3); }
+  .transport input[type=range] { width: 120px; }
+
+  .spacer { flex: 1; }
+
+  /* ---------- Grid ---------- */
+  .seq { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); overflow-x: auto; }
+
+  .track {
+    display: grid;
+    grid-template-columns: 250px 1fr;
+    border-bottom: 1px solid var(--line);
+  }
+  .track:last-child { border-bottom: none; }
+
+  .track-head {
+    display: grid;
+    grid-template-columns: 11px 1fr 56px 24px 24px; /* pastille · nom · volume · mute · suppr */
+    align-items: center; gap: 7px;
+    padding: 10px 11px; background: var(--panel-light);
+    border-right: 1px solid var(--line);
+  }
+  .swatch { width: 11px; height: 11px; border-radius: 3px; }
+  .track-name {
+    font-size: 0.74rem; letter-spacing: 0.5px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .mute-btn { padding: 4px 0; font-size: 0.62rem; line-height: 1; text-align: center; }
+  .mute-btn.muted { background: var(--accent-2); color: #fff; border-color: var(--accent-2); opacity: 0.9; }
+  .vol { width: 100% !important; }
+
+  .steps { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 4px; padding: 7px; min-width: 540px; }
+
+  .cell {
+    aspect-ratio: 1 / 1.15; min-height: 30px;
+    background: var(--panel-light);
+    border: 1px solid var(--line); border-radius: 5px;
+    cursor: pointer; transition: transform 0.08s ease, background 0.12s ease, box-shadow 0.12s ease;
+    position: relative;
+  }
+  .cell:hover { border-color: var(--muted); }
+  /* beat group shading (every 4th) */
+  .cell.beat { background: #16161f; }
+  .cell.active {
+    background: var(--tc, var(--accent));
+    border-color: var(--tc, var(--accent));
+    box-shadow: var(--glow) var(--tc, var(--accent));
+  }
+  .cell.active:hover { transform: scale(1.06); }
+
+  /* playhead column highlight */
+  .cell.cursor::after {
+    content: ""; position: absolute; inset: -1px; border-radius: 5px;
+    border: 1.5px solid var(--accent-3); pointer-events: none;
+  }
+  .cell.active.cursor { animation: pop 0.18s ease; }
+  @keyframes pop { 0% { transform: scale(1.18); } 100% { transform: scale(1); } }
+
+  /* ---------- Bottom bar ---------- */
+  .footer-bar {
+    display: flex; gap: 12px; flex-wrap: wrap; margin-top: 22px; align-items: center;
+  }
+  .hint { color: var(--muted); font-size: 0.7rem; letter-spacing: 0.5px; }
+  .toast {
+    position: fixed; bottom: 22px; left: 50%; transform: translateX(-50%) translateY(20px);
+    background: var(--accent); color: #06120e; padding: 11px 20px; border-radius: var(--radius);
+    font-size: 0.8rem; font-weight: 700; opacity: 0; pointer-events: none;
+    transition: all 0.3s ease; z-index: 100; letter-spacing: 0.5px;
+  }
+  .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+  /* ---------- Presets ---------- */
+  .presets {
+    background: var(--panel); border: 1px solid var(--line);
+    border-radius: var(--radius); padding: 14px 18px; margin-bottom: 22px;
+  }
+  .presets-bar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  .presets-title {
+    font-family: 'Major Mono Display', monospace;
+    color: var(--accent); font-size: 0.85rem; letter-spacing: 2px;
+  }
+  #presetName {
+    font-family: 'Space Mono', monospace; background: var(--panel-light);
+    color: var(--text); border: 1px solid var(--line); border-radius: var(--radius);
+    padding: 9px 12px; font-size: 0.78rem; flex: 1; min-width: 160px;
+  }
+  #presetName:focus { outline: none; border-color: var(--accent); }
+  #presetName::placeholder { color: var(--muted); }
+  .btn-save { background: var(--accent-3); color: #1a1500; border-color: var(--accent-3); font-weight: 700; }
+  .btn-save:hover { color: #1a1500; box-shadow: var(--glow) var(--accent-3); }
+
+  .preset-list { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+  .preset-list:empty::after {
+    content: "Aucun morceau sauvegardé pour l'instant. Construis quelque chose et sauvegarde-le !";
+    color: var(--muted); font-size: 0.72rem; font-style: italic;
+  }
+  .preset-chip {
+    display: flex; align-items: center; gap: 0;
+    background: var(--panel-light); border: 1px solid var(--line);
+    border-radius: var(--radius); overflow: hidden;
+  }
+  .preset-chip .load {
+    padding: 8px 12px; cursor: pointer; font-size: 0.76rem;
+    color: var(--text); transition: all 0.15s ease; border: none; background: transparent;
+    border-radius: 0; max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .preset-chip .load:hover { background: var(--accent); color: #06120e; }
+  .preset-chip .chip-act {
+    border: none; border-left: 1px solid var(--line); background: transparent;
+    padding: 8px 9px; font-size: 0.68rem; border-radius: 0; color: var(--muted);
+  }
+  .preset-chip .chip-act:hover { color: var(--accent-2); background: var(--panel); }
+
+  .add-row { display: flex; gap: 8px; flex-wrap: wrap; }
+  select {
+    font-family: 'Space Mono', monospace; background: var(--panel-light);
+    color: var(--text); border: 1px solid var(--line); border-radius: var(--radius);
+    padding: 9px 12px; font-size: 0.78rem; cursor: pointer;
+  }
+  select:hover { border-color: var(--accent); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <div class="logo">pulse</div>
+      <div class="tagline">step sequencer · web audio</div>
+    </div>
+    <div class="add-row">
+      <select id="addInstrument">
+        <option value="">+ ajouter un instrument…</option>
+      </select>
+      <select id="stepsCount">
+        <option value="8">8 pas</option>
+        <option value="16" selected>16 pas</option>
+        <option value="32">32 pas</option>
+      </select>
+    </div>
+  </header>
+
+  <div class="transport">
+    <button id="playBtn" class="btn-play">▶ PLAY</button>
+    <div class="ctrl-group">
+      <label>tempo</label>
+      <input type="range" id="bpm" min="40" max="220" value="120">
+      <span class="bpm-val"><span id="bpmVal">120</span></span>
+    </div>
+    <div class="ctrl-group">
+      <label>master</label>
+      <input type="range" id="master" min="0" max="100" value="80">
+    </div>
+    <div class="spacer"></div>
+    <button id="clearBtn">⌫ effacer</button>
+    <select id="loopCount" title="Nombre de boucles à enregistrer">
+      <option value="1">1 boucle</option>
+      <option value="2" selected>2 boucles</option>
+      <option value="4">4 boucles</option>
+      <option value="8">8 boucles</option>
+    </select>
+    <button id="exportAudioBtn">♪ export audio</button>
+  </div>
+
+  <div class="presets" id="presets">
+    <div class="presets-bar">
+      <span class="presets-title">◈ mes morceaux</span>
+      <input type="text" id="presetName" placeholder="nom du morceau…" maxlength="40">
+      <button id="saveBtn" class="btn-save">💾 sauvegarder</button>
+      <button id="exportBtn" title="Télécharger tous tes morceaux dans un fichier">⬇ exporter</button>
+      <button id="importBtn" title="Charger des morceaux depuis un fichier">⬆ importer</button>
+      <input type="file" id="importFile" accept=".json,application/json" hidden>
+    </div>
+    <div class="preset-list" id="presetList"></div>
+  </div>
+
+  <div class="seq" id="seq"></div>
+
+  <div class="footer-bar">
+    <span class="hint">Clique sur les cases pour placer un son. Tu peux modifier pendant la lecture — ça tourne en boucle.</span>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+/* ============================================================
+   PULSE — séquenceur Web Audio
+   Tout est synthétisé : aucun fichier audio externe.
+   ============================================================ */
+
+const AC = new (window.AudioContext || window.webkitAudioContext)();
+const masterGain = AC.createGain();
+masterGain.gain.value = 0.8;
+masterGain.connect(AC.destination);
+
+/* ---------- Banque de sons (générés) ---------- */
+// type: 'drum' = percussion synthétisée, 'synth' = note mélodique
+// Chaque play() accepte (time, dest, ctx) pour pouvoir cibler soit la lecture
+// en direct (AC + masterGain), soit le rendu hors-ligne (export audio).
+const SOUND_BANK = {
+  kick:   { name: 'Kick',     color: '#ff3d8b', type: 'drum',  play: (t,d,c)=>drumKick(t,d,c) },
+  snare:  { name: 'Snare',    color: '#ffd23d', type: 'drum',  play: (t,d,c)=>drumSnare(t,d,c) },
+  hat:    { name: 'Hi-Hat',   color: '#00ffc8', type: 'drum',  play: (t,d,c)=>drumHat(t,0.05,d,c) },
+  openhat:{ name: 'Open Hat', color: '#3dd6ff', type: 'drum',  play: (t,d,c)=>drumHat(t,0.3,d,c) },
+  clap:   { name: 'Clap',     color: '#c77dff', type: 'drum',  play: (t,d,c)=>drumClap(t,d,c) },
+  tom:    { name: 'Tom',      color: '#ff8c42', type: 'drum',  play: (t,d,c)=>drumTom(t,d,c) },
+  // notes mélodiques — fréquences en Hz
+  bass:   { name: 'Bass C2',  color: '#7dff8a', type: 'synth', play: (t,d,c)=>synthNote(t,65.41,'sawtooth',0.45,d,c) },
+  c4:     { name: 'Note C4',  color: '#5ee0ff', type: 'synth', play: (t,d,c)=>synthNote(t,261.63,'triangle',0.4,d,c) },
+  e4:     { name: 'Note E4',  color: '#5ee0ff', type: 'synth', play: (t,d,c)=>synthNote(t,329.63,'triangle',0.4,d,c) },
+  g4:     { name: 'Note G4',  color: '#5ee0ff', type: 'synth', play: (t,d,c)=>synthNote(t,392.00,'triangle',0.4,d,c) },
+  c5:     { name: 'Note C5',  color: '#5ee0ff', type: 'synth', play: (t,d,c)=>synthNote(t,523.25,'triangle',0.4,d,c) },
+  pluck:  { name: 'Pluck A4', color: '#ffadad', type: 'synth', play: (t,d,c)=>synthNote(t,440.00,'square',0.25,d,c) },
+};
+
+/* ---------- Synthèse des percussions ---------- */
+function drumKick(time, dest=masterGain, ctx=AC) {
+  const o = ctx.createOscillator(), g = ctx.createGain();
+  o.frequency.setValueAtTime(150, time);
+  o.frequency.exponentialRampToValueAtTime(0.001, time + 0.4);
+  g.gain.setValueAtTime(1, time);
+  g.gain.exponentialRampToValueAtTime(0.001, time + 0.4);
+  o.connect(g); g.connect(dest);
+  o.start(time); o.stop(time + 0.4);
+}
+function makeNoise(ctx) {
+  const len = ctx.sampleRate * 0.5;
+  const buf = ctx.createBuffer(1, len, ctx.sampleRate);
+  const d = buf.getChannelData(0);
+  for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
+  return buf;
+}
+const NOISE = makeNoise(AC);
+// renvoie un buffer de bruit valide pour le contexte donné (le buffer live ne
+// peut pas être réutilisé dans un OfflineAudioContext différent)
+function noiseFor(ctx) { return ctx === AC ? NOISE : makeNoise(ctx); }
+
+function drumSnare(time, dest=masterGain, ctx=AC) {
+  const n = ctx.createBufferSource(); n.buffer = noiseFor(ctx);
+  const nf = ctx.createBiquadFilter(); nf.type = 'highpass'; nf.frequency.value = 1000;
+  const ng = ctx.createGain();
+  ng.gain.setValueAtTime(0.7, time);
+  ng.gain.exponentialRampToValueAtTime(0.01, time + 0.2);
+  n.connect(nf); nf.connect(ng); ng.connect(dest);
+  n.start(time); n.stop(time + 0.2);
+  // corps tonal
+  const o = ctx.createOscillator(), g = ctx.createGain();
+  o.type = 'triangle'; o.frequency.value = 180;
+  g.gain.setValueAtTime(0.5, time);
+  g.gain.exponentialRampToValueAtTime(0.01, time + 0.1);
+  o.connect(g); g.connect(dest);
+  o.start(time); o.stop(time + 0.1);
+}
+function drumHat(time, decay, dest=masterGain, ctx=AC) {
+  const n = ctx.createBufferSource(); n.buffer = noiseFor(ctx);
+  const f = ctx.createBiquadFilter(); f.type = 'highpass'; f.frequency.value = 7000;
+  const g = ctx.createGain();
+  g.gain.setValueAtTime(0.4, time);
+  g.gain.exponentialRampToValueAtTime(0.001, time + decay);
+  n.connect(f); f.connect(g); g.connect(dest);
+  n.start(time); n.stop(time + decay);
+}
+function drumClap(time, dest=masterGain, ctx=AC) {
+  for (let i = 0; i < 3; i++) {
+    const n = ctx.createBufferSource(); n.buffer = noiseFor(ctx);
+    const f = ctx.createBiquadFilter(); f.type = 'bandpass'; f.frequency.value = 1500;
+    const g = ctx.createGain();
+    const t = time + i * 0.012;
+    g.gain.setValueAtTime(0.5, t);
+    g.gain.exponentialRampToValueAtTime(0.001, t + 0.12);
+    n.connect(f); f.connect(g); g.connect(dest);
+    n.start(t); n.stop(t + 0.12);
+  }
+}
+function drumTom(time, dest=masterGain, ctx=AC) {
+  const o = ctx.createOscillator(), g = ctx.createGain();
+  o.frequency.setValueAtTime(220, time);
+  o.frequency.exponentialRampToValueAtTime(80, time + 0.3);
+  g.gain.setValueAtTime(0.8, time);
+  g.gain.exponentialRampToValueAtTime(0.001, time + 0.3);
+  o.connect(g); g.connect(dest);
+  o.start(time); o.stop(time + 0.3);
+}
+
+/* ---------- Synthèse des notes mélodiques ---------- */
+function synthNote(time, freq, wave, dur, dest=masterGain, ctx=AC) {
+  const o = ctx.createOscillator(), g = ctx.createGain();
+  o.type = wave; o.frequency.value = freq;
+  g.gain.setValueAtTime(0, time);
+  g.gain.linearRampToValueAtTime(0.5, time + 0.01);    // attaque
+  g.gain.exponentialRampToValueAtTime(0.001, time + dur); // déclin
+  o.connect(g); g.connect(dest);
+  o.start(time); o.stop(time + dur);
+}
+
+/* ============================================================
+   État du séquenceur
+   ============================================================ */
+let state = {
+  bpm: 120,
+  steps: 16,
+  tracks: [] // { id, soundKey, gain (0-1), muted, pattern: [bool...] }
+};
+
+let isPlaying = false;
+let currentStep = 0;
+let nextNoteTime = 0;
+let timerID = null;
+const LOOKAHEAD = 25;        // ms
+const SCHEDULE_AHEAD = 0.1;  // s
+
+/* ---------- Construction par défaut ---------- */
+function defaultTracks() {
+  const mk = (key) => ({
+    id: crypto.randomUUID(),
+    soundKey: key,
+    gain: 0.85,
+    muted: false,
+    pattern: new Array(state.steps).fill(false)
+  });
+  const t = [mk('kick'), mk('snare'), mk('hat'), mk('bass')];
+  // petit motif d'amorce
+  t[0].pattern[0] = t[0].pattern[8] = true;
+  t[1].pattern[4] = t[1].pattern[12] = true;
+  for (let i = 0; i < state.steps; i += 2) t[2].pattern[i] = true;
+  return t;
+}
+
+/* ============================================================
+   Rendu de l'interface
+   ============================================================ */
+const seqEl = document.getElementById('seq');
+
+function render() {
+  seqEl.innerHTML = '';
+  state.tracks.forEach((track, ti) => {
+    const snd = SOUND_BANK[track.soundKey];
+    const row = document.createElement('div');
+    row.className = 'track';
+
+    // En-tête de piste
+    const head = document.createElement('div');
+    head.className = 'track-head';
+    head.innerHTML = `
+      <span class="swatch" style="background:${snd.color}"></span>
+      <span class="track-name">${snd.name}</span>
+      <input class="vol" type="range" min="0" max="100" value="${Math.round(track.gain*100)}" title="volume">
+      <button class="mute-btn ${track.muted?'muted':''}">${track.muted?'M':'•'}</button>
+      <button class="mute-btn del" title="supprimer">✕</button>
+    `;
+    head.querySelector('.vol').addEventListener('input', e => { track.gain = e.target.value/100; });
+    head.querySelector('.mute-btn:not(.del)').addEventListener('click', e => {
+      track.muted = !track.muted;
+      e.target.classList.toggle('muted', track.muted);
+      e.target.textContent = track.muted ? 'M' : '•';
+    });
+    head.querySelector('.del').addEventListener('click', () => {
+      state.tracks.splice(ti, 1); render();
+    });
+
+    // Cases
+    const stepsWrap = document.createElement('div');
+    stepsWrap.className = 'steps';
+    for (let s = 0; s < state.steps; s++) {
+      const cell = document.createElement('div');
+      cell.className = 'cell' + ((Math.floor(s/4)%2===1) ? ' beat' : '');
+      cell.style.setProperty('--tc', snd.color);
+      if (track.pattern[s]) cell.classList.add('active');
+      cell.dataset.t = ti; cell.dataset.s = s;
+      cell.addEventListener('click', () => {
+        track.pattern[s] = !track.pattern[s];
+        cell.classList.toggle('active', track.pattern[s]);
+        if (track.pattern[s] && !isPlaying) triggerSound(track, AC.currentTime);
+      });
+      stepsWrap.appendChild(cell);
+    }
+
+    row.appendChild(head);
+    row.appendChild(stepsWrap);
+    seqEl.appendChild(row);
+  });
+  updateCursor(-1);
+}
+
+/* ---------- Déclenchement d'un son ---------- */
+// dest/ctx par défaut = lecture live ; on les passe explicitement pour l'export.
+function triggerSound(track, time, dest=masterGain, ctx=AC) {
+  if (track.muted) return;
+  const snd = SOUND_BANK[track.soundKey];
+  // gain propre à la piste, inséré entre le son et la destination
+  const tg = ctx.createGain();
+  tg.gain.value = track.gain;
+  tg.connect(dest);
+  snd.play(time, tg, ctx);
+}
+
+/* ============================================================
+   Moteur de lecture (scheduler look-ahead)
+   ============================================================ */
+function scheduler() {
+  while (nextNoteTime < AC.currentTime + SCHEDULE_AHEAD) {
+    scheduleStep(currentStep, nextNoteTime);
+    const secondsPerBeat = 60.0 / state.bpm;
+    nextNoteTime += 0.25 * secondsPerBeat; // 16e de note
+    currentStep = (currentStep + 1) % state.steps;
+  }
+  timerID = setTimeout(scheduler, LOOKAHEAD);
+}
+
+function scheduleStep(step, time) {
+  state.tracks.forEach(track => {
+    if (track.pattern[step] && !track.muted) {
+      triggerSound(track, time);
+    }
+  });
+  // mise à jour visuelle synchronisée
+  const delay = (time - AC.currentTime) * 1000;
+  setTimeout(() => updateCursor(step), Math.max(0, delay));
+}
+
+function updateCursor(step) {
+  document.querySelectorAll('.cell.cursor').forEach(c => c.classList.remove('cursor'));
+  if (step < 0) return;
+  document.querySelectorAll(`.cell[data-s="${step}"]`).forEach(c => c.classList.add('cursor'));
+}
+
+function play() {
+  if (AC.state === 'suspended') AC.resume();
+  isPlaying = true;
+  currentStep = 0;
+  nextNoteTime = AC.currentTime + 0.05;
+  scheduler();
+  const b = document.getElementById('playBtn');
+  b.classList.add('playing'); b.textContent = '■ STOP';
+}
+function stop() {
+  isPlaying = false;
+  clearTimeout(timerID);
+  updateCursor(-1);
+  const b = document.getElementById('playBtn');
+  b.classList.remove('playing'); b.textContent = '▶ PLAY';
+}
+
+/* ============================================================
+   Contrôles
+   ============================================================ */
+document.getElementById('playBtn').addEventListener('click', () => isPlaying ? stop() : play());
+
+const bpmSlider = document.getElementById('bpm');
+bpmSlider.addEventListener('input', e => {
+  state.bpm = +e.target.value;
+  document.getElementById('bpmVal').textContent = state.bpm;
+});
+
+document.getElementById('master').addEventListener('input', e => {
+  masterGain.gain.value = e.target.value/100;
+});
+
+document.getElementById('clearBtn').addEventListener('click', () => {
+  state.tracks.forEach(t => t.pattern.fill(false));
+  render();
+  toast('Grille effacée');
+});
+
+document.getElementById('stepsCount').addEventListener('change', e => {
+  const newSteps = +e.target.value;
+  state.tracks.forEach(t => {
+    const p = new Array(newSteps).fill(false);
+    for (let i = 0; i < Math.min(newSteps, t.pattern.length); i++) p[i] = t.pattern[i];
+    t.pattern = p;
+  });
+  state.steps = newSteps;
+  render();
+});
+
+// menu d'ajout d'instrument
+const addSel = document.getElementById('addInstrument');
+Object.entries(SOUND_BANK).forEach(([key, snd]) => {
+  const opt = document.createElement('option');
+  opt.value = key; opt.textContent = (snd.type==='drum'?'🥁 ':'🎹 ') + snd.name;
+  addSel.appendChild(opt);
+});
+addSel.addEventListener('change', e => {
+  if (!e.target.value) return;
+  state.tracks.push({
+    id: crypto.randomUUID(),
+    soundKey: e.target.value,
+    gain: 0.85, muted: false,
+    pattern: new Array(state.steps).fill(false)
+  });
+  e.target.value = '';
+  render();
+});
+
+/* ============================================================
+   Sauvegarde / partage via URL
+   ============================================================ */
+function encodeState() {
+  const compact = {
+    b: state.bpm,
+    s: state.steps,
+    t: state.tracks.map(t => ({
+      k: t.soundKey,
+      g: Math.round(t.gain*100),
+      m: t.muted?1:0,
+      p: t.pattern.map(x=>x?1:0).join('')
+    }))
+  };
+  return btoa(unescape(encodeURIComponent(JSON.stringify(compact))));
+}
+function decodeState(str) {
+  try {
+    const c = JSON.parse(decodeURIComponent(escape(atob(str))));
+    state.bpm = c.b; state.steps = c.s;
+    state.tracks = c.t.map(t => ({
+      id: crypto.randomUUID(),
+      soundKey: t.k,
+      gain: t.g/100,
+      muted: !!t.m,
+      pattern: t.p.split('').map(x=>x==='1')
+    }));
+    return true;
+  } catch(e) { return false; }
+}
+
+/* ============================================================
+   Export audio
+   1) On rend le morceau hors-ligne (rapide, propre) → AudioBuffer.
+   2) On encode ce buffer en compressé (.webm/.ogg) via MediaRecorder.
+   3) Si l'enregistrement compressé n'est pas supporté (ex. Safari/iPhone),
+      on retombe automatiquement sur un fichier .wav non compressé.
+   ============================================================ */
+
+// Choisit le meilleur format compressé supporté par le navigateur
+function pickAudioMime() {
+  if (typeof MediaRecorder === 'undefined') return null;
+  const candidates = [
+    'audio/webm;codecs=opus',
+    'audio/webm',
+    'audio/ogg;codecs=opus',
+    'audio/ogg',
+  ];
+  for (const m of candidates) {
+    if (MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(m)) return m;
+  }
+  return null;
+}
+
+// Rend le morceau dans un AudioBuffer hors-ligne
+async function renderOffline(loops) {
+  const secondsPerBeat = 60 / state.bpm;
+  const stepDur = 0.25 * secondsPerBeat;     // durée d'un pas (double-croche)
+  const loopDur = stepDur * state.steps;     // durée d'une boucle
+  const tail = 0.6;                          // laisse les sons résonner à la fin
+  const total = loopDur * loops + tail;
+  const sampleRate = 44100;
+
+  const OfflineCtx = window.OfflineAudioContext || window.webkitOfflineAudioContext;
+  const off = new OfflineCtx(2, Math.ceil(sampleRate * total), sampleRate);
+  const offMaster = off.createGain();
+  offMaster.gain.value = masterGain.gain.value;
+  offMaster.connect(off.destination);
+
+  for (let loop = 0; loop < loops; loop++) {
+    for (let s = 0; s < state.steps; s++) {
+      const t = loop * loopDur + s * stepDur;
+      state.tracks.forEach(track => {
+        if (track.pattern[s] && !track.muted) triggerSound(track, t, offMaster, off);
+      });
+    }
+  }
+  return off.startRendering();
+}
+
+// Encode un AudioBuffer en compressé via MediaRecorder (rejoue le buffer en temps réel)
+function encodeCompressed(buffer, mime) {
+  return new Promise((resolve, reject) => {
+    try {
+      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      const src = ctx.createBufferSource();
+      src.buffer = buffer;
+      const dest = ctx.createMediaStreamDestination();
+      src.connect(dest);
+
+      const rec = new MediaRecorder(dest.stream, { mimeType: mime });
+      const chunks = [];
+      rec.ondataavailable = e => { if (e.data.size > 0) chunks.push(e.data); };
+      rec.onstop = () => {
+        ctx.close();
+        resolve(new Blob(chunks, { type: mime }));
+      };
+      rec.onerror = err => { ctx.close(); reject(err); };
+
+      src.onended = () => { if (rec.state !== 'inactive') rec.stop(); };
+      rec.start();
+      src.start();
+      // sécurité : stoppe un peu après la durée connue du buffer
+      setTimeout(() => { if (rec.state !== 'inactive') rec.stop(); }, (buffer.duration + 0.3) * 1000);
+    } catch(err) { reject(err); }
+  });
+}
+
+function downloadBlob(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click(); a.remove();
+  URL.revokeObjectURL(url);
+}
+
+async function exportAudio() {
+  if (state.tracks.length === 0) { toast('Rien à exporter'); return; }
+  const loops = parseInt(document.getElementById('loopCount').value, 10) || 2;
+  const btn = document.getElementById('exportAudioBtn');
+  const oldLabel = btn.textContent;
+  btn.textContent = '⏳ rendu…'; btn.disabled = true;
+
+  try {
+    const rendered = await renderOffline(loops);
+    const stamp = new Date().toISOString().slice(0, 10);
+    const mime = pickAudioMime();
+
+    if (mime) {
+      // export compressé (léger)
+      btn.textContent = '⏳ encodage…';
+      const blob = await encodeCompressed(rendered, mime);
+      const ext = mime.indexOf('ogg') !== -1 ? 'ogg' : 'webm';
+      downloadBlob(blob, 'pulse-audio-' + stamp + '.' + ext);
+      toast('Audio exporté ✓ (' + loops + ' boucle' + (loops>1?'s':'') + ', .' + ext + ')');
+    } else {
+      // repli universel : WAV non compressé
+      const wav = audioBufferToWav(rendered);
+      downloadBlob(new Blob([wav], { type: 'audio/wav' }), 'pulse-audio-' + stamp + '.wav');
+      toast('Audio exporté ✓ (' + loops + ' boucle' + (loops>1?'s':'') + ', .wav)');
+    }
+  } catch(err) {
+    toast('⚠ Export audio impossible sur ce navigateur');
+  } finally {
+    btn.textContent = oldLabel; btn.disabled = false;
+  }
+}
+
+// Encode un AudioBuffer en fichier WAV (PCM 16 bits) — format universel
+function audioBufferToWav(buffer) {
+  const numCh = buffer.numberOfChannels;
+  const len = buffer.length * numCh * 2 + 44;
+  const ab = new ArrayBuffer(len);
+  const view = new DataView(ab);
+  const channels = [];
+  let offset = 0, pos = 0;
+
+  function setStr(s) { for (let i = 0; i < s.length; i++) view.setUint8(pos++, s.charCodeAt(i)); }
+  function set16(v) { view.setUint16(pos, v, true); pos += 2; }
+  function set32(v) { view.setUint32(pos, v, true); pos += 4; }
+
+  // en-tête RIFF/WAVE
+  setStr('RIFF'); set32(len - 8); setStr('WAVE');
+  setStr('fmt '); set32(16); set16(1); set16(numCh);
+  set32(buffer.sampleRate); set32(buffer.sampleRate * numCh * 2);
+  set16(numCh * 2); set16(16);
+  setStr('data'); set32(buffer.length * numCh * 2);
+
+  for (let i = 0; i < numCh; i++) channels.push(buffer.getChannelData(i));
+  // entrelacement + conversion float [-1,1] → int16
+  while (offset < buffer.length) {
+    for (let i = 0; i < numCh; i++) {
+      let sample = Math.max(-1, Math.min(1, channels[i][offset]));
+      sample = sample < 0 ? sample * 0x8000 : sample * 0x7FFF;
+      view.setInt16(pos, sample, true); pos += 2;
+    }
+    offset++;
+  }
+  return ab;
+}
+
+document.getElementById('exportAudioBtn').addEventListener('click', exportAudio);
+
+function toast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg; t.classList.add('show');
+  clearTimeout(t._timer);
+  t._timer = setTimeout(() => t.classList.remove('show'), 2200);
+}
+
+/* ============================================================
+   Mes morceaux — sauvegarde locale (localStorage)
+   Fonctionne sur GitHub Pages. Les morceaux restent dans
+   le navigateur même après fermeture de l'onglet.
+   ============================================================ */
+const STORE_KEY = 'pulse_presets_v1';
+
+// Morceau de démonstration : utilise les 12 instruments (house mélodique en Do majeur).
+// Installé automatiquement au tout premier lancement pour montrer un exemple complet.
+const DEMO_PRESET = {"name":"✦ Démo — Cité Néon","data":{"bpm":124,"steps":16,"master":75,"tracks":[{"k":"kick","g":95,"m":0,"p":"1000100010001000"},{"k":"snare","g":88,"m":0,"p":"0000100000001000"},{"k":"clap","g":80,"m":0,"p":"0000100000001000"},{"k":"hat","g":70,"m":0,"p":"0010001000100010"},{"k":"openhat","g":60,"m":0,"p":"0000000100000001"},{"k":"tom","g":72,"m":0,"p":"0000000000000011"},{"k":"bass","g":90,"m":0,"p":"1001001010010010"},{"k":"c4","g":75,"m":0,"p":"1000000010000000"},{"k":"e4","g":75,"m":0,"p":"0010000000100000"},{"k":"g4","g":75,"m":0,"p":"0000100000001000"},{"k":"c5","g":78,"m":0,"p":"0000001000000010"},{"k":"pluck","g":55,"m":0,"p":"0001000100010001"}]},"date":0};
+
+function loadPresets() {
+  try {
+    return JSON.parse(localStorage.getItem(STORE_KEY)) || [];
+  } catch(e) { return []; }
+}
+function savePresets(list) {
+  try {
+    localStorage.setItem(STORE_KEY, JSON.stringify(list));
+    return true;
+  } catch(e) {
+    toast('⚠ Sauvegarde impossible (stockage plein ou bloqué)');
+    return false;
+  }
+}
+
+// snapshot complet de l'état actuel
+function snapshot() {
+  return {
+    bpm: state.bpm,
+    steps: state.steps,
+    master: Math.round(masterGain.gain.value * 100),
+    tracks: state.tracks.map(t => ({
+      k: t.soundKey,
+      g: Math.round(t.gain * 100),
+      m: t.muted ? 1 : 0,
+      p: t.pattern.map(x => x ? 1 : 0).join('')
+    }))
+  };
+}
+
+// restaure un snapshot dans l'état + l'interface
+function restore(snap) {
+  state.bpm = snap.bpm;
+  state.steps = snap.steps;
+  state.tracks = snap.tracks.map(t => ({
+    id: crypto.randomUUID(),
+    soundKey: t.k,
+    gain: t.g / 100,
+    muted: !!t.m,
+    pattern: t.p.split('').map(x => x === '1')
+  }));
+  // synchro des contrôles visuels
+  bpmSlider.value = state.bpm;
+  document.getElementById('bpmVal').textContent = state.bpm;
+  document.getElementById('stepsCount').value = state.steps;
+  if (typeof snap.master === 'number') {
+    masterGain.gain.value = snap.master / 100;
+    document.getElementById('master').value = snap.master;
+  }
+  render();
+}
+
+function renderPresetList() {
+  const list = loadPresets();
+  const el = document.getElementById('presetList');
+  el.innerHTML = '';
+  list.forEach((preset, i) => {
+    const chip = document.createElement('div');
+    chip.className = 'preset-chip';
+
+    const load = document.createElement('button');
+    load.className = 'load';
+    load.textContent = '▶ ' + preset.name;
+    load.title = 'Charger « ' + preset.name + ' »';
+    load.addEventListener('click', () => {
+      if (isPlaying) stop();
+      restore(preset.data);
+      toast('« ' + preset.name +' » chargé');
+    });
+
+    const ren = document.createElement('button');
+    ren.className = 'chip-act'; ren.textContent = '✎'; ren.title = 'Renommer';
+    ren.addEventListener('click', () => {
+      const nn = prompt('Nouveau nom :', preset.name);
+      if (nn && nn.trim()) {
+        list[i].name = nn.trim();
+        savePresets(list); renderPresetList();
+      }
+    });
+
+    const ovr = document.createElement('button');
+    ovr.className = 'chip-act'; ovr.textContent = '⟳'; ovr.title = 'Remplacer par le morceau actuel';
+    ovr.addEventListener('click', () => {
+      if (confirm('Remplacer « ' + preset.name + ' » par ce que tu as à l\'écran ?')) {
+        list[i].data = snapshot();
+        savePresets(list); renderPresetList();
+        toast('« ' + preset.name + ' » mis à jour');
+      }
+    });
+
+    const del = document.createElement('button');
+    del.className = 'chip-act'; del.textContent = '✕'; del.title = 'Supprimer';
+    del.addEventListener('click', () => {
+      if (confirm('Supprimer « ' + preset.name + ' » ?')) {
+        list.splice(i, 1);
+        savePresets(list); renderPresetList();
+        toast('Morceau supprimé');
+      }
+    });
+
+    chip.append(load, ren, ovr, del);
+    el.appendChild(chip);
+  });
+}
+
+document.getElementById('saveBtn').addEventListener('click', () => {
+  const input = document.getElementById('presetName');
+  const name = input.value.trim();
+  if (!name) { input.focus(); toast('Donne un nom à ton morceau'); return; }
+  const list = loadPresets();
+  const existing = list.findIndex(p => p.name.toLowerCase() === name.toLowerCase());
+  if (existing >= 0) {
+    if (!confirm('Un morceau « ' + name + ' » existe déjà. Le remplacer ?')) return;
+    list[existing].data = snapshot();
+  } else {
+    list.push({ name, data: snapshot(), date: Date.now() });
+  }
+  if (savePresets(list)) {
+    input.value = '';
+    renderPresetList();
+    toast('« ' + name + ' » sauvegardé ✓');
+  }
+});
+
+// permet de sauvegarder avec la touche Entrée
+document.getElementById('presetName').addEventListener('keydown', e => {
+  if (e.key === 'Enter') document.getElementById('saveBtn').click();
+});
+
+/* ---------- Exporter / Importer la collection ---------- */
+// Exporte tous les morceaux dans un fichier .json téléchargeable
+document.getElementById('exportBtn').addEventListener('click', () => {
+  const list = loadPresets();
+  if (list.length === 0) { toast('Aucun morceau à exporter'); return; }
+  const payload = { app: 'pulse', version: 1, exported: Date.now(), presets: list };
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  const stamp = new Date().toISOString().slice(0, 10);
+  a.href = url;
+  a.download = 'pulse-morceaux-' + stamp + '.json';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+  toast(list.length + ' morceau(x) exporté(s) ✓');
+});
+
+// Ouvre le sélecteur de fichier
+document.getElementById('importBtn').addEventListener('click', () => {
+  document.getElementById('importFile').click();
+});
+
+// Lit le fichier importé et fusionne avec la collection existante
+document.getElementById('importFile').addEventListener('change', e => {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = ev => {
+    try {
+      const data = JSON.parse(ev.target.result);
+      const incoming = data.presets || data; // tolère un tableau brut
+      if (!Array.isArray(incoming)) throw new Error('format');
+      // validation minimale de chaque entrée
+      const valid = incoming.filter(p => p && p.name && p.data && Array.isArray(p.data.tracks));
+      if (valid.length === 0) throw new Error('vide');
+
+      const list = loadPresets();
+      let added = 0, renamed = 0;
+      valid.forEach(p => {
+        let name = p.name;
+        // évite d'écraser : si le nom existe, on ajoute un suffixe
+        if (list.some(x => x.name.toLowerCase() === name.toLowerCase())) {
+          let n = 2;
+          while (list.some(x => x.name.toLowerCase() === (name + ' (' + n + ')').toLowerCase())) n++;
+          name = name + ' (' + n + ')';
+          renamed++;
+        }
+        list.push({ name, data: p.data, date: p.date || Date.now() });
+        added++;
+      });
+      savePresets(list);
+      renderPresetList();
+      toast(added + ' morceau(x) importé(s)' + (renamed ? ' · ' + renamed + ' renommé(s)' : '') + ' ✓');
+    } catch(err) {
+      toast('⚠ Fichier invalide ou illisible');
+    }
+    e.target.value = ''; // permet de réimporter le même fichier plus tard
+  };
+  reader.readAsText(file);
+});
+
+
+function init() {
+  // S'assure que la démo est présente dans "mes morceaux".
+  // On l'ajoute si elle manque (sans toucher aux morceaux déjà enregistrés).
+  let demoJustAdded = false;
+  try {
+    const existing = loadPresets();
+    const hasDemo = existing.some(p => p.name === DEMO_PRESET.name);
+    if (!hasDemo) {
+      existing.unshift(DEMO_PRESET); // en tête de liste
+      savePresets(existing);
+      demoJustAdded = (localStorage.getItem(STORE_KEY) !== null && existing.length === 1);
+    }
+  } catch(e) { /* stockage indisponible : on continue sans installer */ }
+
+  if (location.hash.length > 1 && decodeState(location.hash.slice(1))) {
+    // arrivée via un lien de partage → on charge ce morceau
+    bpmSlider.value = state.bpm;
+    document.getElementById('bpmVal').textContent = state.bpm;
+    document.getElementById('stepsCount').value = state.steps;
+    render();
+  } else if (demoJustAdded) {
+    // collection vide au départ → on montre la démo directement à l'écran
+    restore(DEMO_PRESET.data);
+  } else {
+    state.tracks = defaultTracks();
+    render();
+  }
+  renderPresetList();
+}
+init();
+</script>
+</body>
+</html>

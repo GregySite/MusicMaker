@@ -97,6 +97,14 @@
 
   .spacer { flex: 1; }
 
+  .fx-bar { margin-top: -10px; }
+  .fx-label {
+    font-family: 'Major Mono Display', monospace;
+    color: var(--accent-2); font-size: 0.8rem; letter-spacing: 2px;
+  }
+  .fx-bar input[type=range] { width: 92px; }
+  #viz { border-radius: 5px; background: #0c0c14; border: 1px solid var(--line); }
+
   /* ---------- Grid ---------- */
   .seq { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); overflow-x: auto; }
 
@@ -245,6 +253,7 @@
       <input type="range" id="master" min="0" max="100" value="80">
     </div>
     <div class="spacer"></div>
+    <button id="randomBtn" title="Générer un motif aléatoire">🎲 aléatoire</button>
     <button id="clearBtn">⌫ effacer</button>
     <select id="loopCount" title="Nombre de boucles à enregistrer">
       <option value="1">1 boucle</option>
@@ -253,6 +262,24 @@
       <option value="8">8 boucles</option>
     </select>
     <button id="exportAudioBtn">♪ export audio</button>
+  </div>
+
+  <div class="transport fx-bar">
+    <span class="fx-label">✶ effets</span>
+    <div class="ctrl-group">
+      <label>réverb</label>
+      <input type="range" id="fxReverb" min="0" max="100" value="0">
+    </div>
+    <div class="ctrl-group">
+      <label>délai</label>
+      <input type="range" id="fxDelay" min="0" max="100" value="0">
+    </div>
+    <div class="ctrl-group">
+      <label>swing</label>
+      <input type="range" id="fxSwing" min="0" max="100" value="0">
+    </div>
+    <div class="spacer"></div>
+    <canvas id="viz" width="240" height="40"></canvas>
   </div>
 
   <div class="presets" id="presets">
@@ -283,9 +310,67 @@
    ============================================================ */
 
 const AC = new (window.AudioContext || window.webkitAudioContext)();
+
+// Paramètres d'effets globaux (0..1), pilotés par l'interface
+const fx = { reverb: 0.0, delay: 0.0, swing: 0.0 };
+
+// Génère une réponse impulsionnelle pour la réverb (bruit qui décroît)
+function makeImpulse(ctx, seconds = 2.2, decay = 3.0) {
+  const rate = ctx.sampleRate;
+  const len = Math.floor(rate * seconds);
+  const imp = ctx.createBuffer(2, len, rate);
+  for (let ch = 0; ch < 2; ch++) {
+    const data = imp.getChannelData(ch);
+    for (let i = 0; i < len; i++) {
+      data[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, decay);
+    }
+  }
+  return imp;
+}
+
+// Construit la chaîne master + effets pour un contexte donné.
+// Renvoie { input } où l'on branche toutes les pistes.
+// Le "dryFinal" est la destination finale (haut-parleurs ou enregistreur).
+function buildAudioGraph(ctx, finalDest, fxState) {
+  const input = ctx.createGain();          // bus où arrivent les pistes
+  input.gain.value = 1;
+
+  // --- chemin sec ---
+  const dry = ctx.createGain(); dry.gain.value = 1;
+  input.connect(dry); dry.connect(finalDest);
+
+  // --- délai (écho) ---
+  const delay = ctx.createDelay(1.0);
+  delay.delayTime.value = 0.28;            // temps d'écho
+  const feedback = ctx.createGain();
+  feedback.gain.value = 0.35;              // répétitions
+  const delayWet = ctx.createGain();
+  delayWet.gain.value = fxState.delay;
+  input.connect(delay);
+  delay.connect(feedback); feedback.connect(delay); // boucle de feedback
+  delay.connect(delayWet); delayWet.connect(finalDest);
+
+  // --- réverb ---
+  const conv = ctx.createConvolver();
+  conv.buffer = makeImpulse(ctx);
+  const reverbWet = ctx.createGain();
+  reverbWet.gain.value = fxState.reverb;
+  input.connect(conv); conv.connect(reverbWet); reverbWet.connect(finalDest);
+
+  return { input, delayWet, reverbWet };
+}
+
+// Graphe pour la lecture live
 const masterGain = AC.createGain();
 masterGain.gain.value = 0.8;
-masterGain.connect(AC.destination);
+// analyseur pour le visualiseur
+const analyser = AC.createAnalyser();
+analyser.fftSize = 256;
+masterGain.connect(analyser);
+analyser.connect(AC.destination);
+// chaîne d'effets : les pistes arrivent dans liveGraph.input
+const liveGraph = buildAudioGraph(AC, masterGain, fx);
+const FX_INPUT = liveGraph.input; // raccourci : destination par défaut des pistes
 
 /* ---------- Banque de sons (générés) ---------- */
 // type: 'drum' = percussion synthétisée, 'synth' = note mélodique
@@ -306,6 +391,30 @@ const SOUND_BANK = {
   c5:     { name: 'Note C5',  color: '#5ee0ff', type: 'synth', play: (t,d,c)=>synthNote(t,523.25,'triangle',0.4,d,c) },
   pluck:  { name: 'Pluck A4', color: '#ffadad', type: 'synth', play: (t,d,c)=>synthNote(t,440.00,'square',0.25,d,c) },
 };
+
+/* ---------- Gamme complète : 2 octaves de Do4 à Si5 ----------
+   Générée programmatiquement. Les notes utilisent une onde triangle douce.
+   Les anciennes clés c4/e4/g4/c5 restent valides (compatibilité des morceaux). */
+const NOTE_NAMES = ['Do','Do#','Ré','Ré#','Mi','Fa','Fa#','Sol','Sol#','La','La#','Si'];
+const NOTE_HUES = ['#5ee0ff','#7ad9ff','#9ed2ff','#b8c8ff','#d4bdff','#e7b3ff','#ffb0ee','#ffadce','#ffb0ad','#ffc7a0','#ffe0a0','#f0ff9e'];
+// fréquence d'un demi-ton : C4 = 261.63, ratio 2^(1/12)
+function noteFreq(semitonesFromC4) { return 261.63 * Math.pow(2, semitonesFromC4 / 12); }
+(function buildScale() {
+  for (let oct = 0; oct < 2; oct++) {
+    for (let n = 0; n < 12; n++) {
+      const semis = oct * 12 + n;
+      const octaveLabel = 4 + oct;
+      const key = 'note_' + semis;                 // clés dédiées à la gamme
+      SOUND_BANK[key] = {
+        name: NOTE_NAMES[n] + octaveLabel,
+        color: NOTE_HUES[n],
+        type: 'synth',
+        scale: true,                               // marque les notes de gamme
+        play: (t, d, c) => synthNote(t, noteFreq(semis), 'triangle', 0.4, d, c)
+      };
+    }
+  }
+})();
 
 /* ---------- Synthèse des percussions ---------- */
 function drumKick(time, dest=masterGain, ctx=AC) {
@@ -477,8 +586,9 @@ function render() {
 }
 
 /* ---------- Déclenchement d'un son ---------- */
-// dest/ctx par défaut = lecture live ; on les passe explicitement pour l'export.
-function triggerSound(track, time, dest=masterGain, ctx=AC) {
+// dest/ctx par défaut = lecture live (entrée de la chaîne d'effets) ;
+// on les passe explicitement pour l'export hors-ligne.
+function triggerSound(track, time, dest=FX_INPUT, ctx=AC) {
   if (track.muted) return;
   const snd = SOUND_BANK[track.soundKey];
   // gain propre à la piste, inséré entre le son et la destination
@@ -493,9 +603,12 @@ function triggerSound(track, time, dest=masterGain, ctx=AC) {
    ============================================================ */
 function scheduler() {
   while (nextNoteTime < AC.currentTime + SCHEDULE_AHEAD) {
-    scheduleStep(currentStep, nextNoteTime);
     const secondsPerBeat = 60.0 / state.bpm;
-    nextNoteTime += 0.25 * secondsPerBeat; // 16e de note
+    const stepDur = 0.25 * secondsPerBeat; // durée d'un 16e
+    // swing : on retarde les pas impairs jusqu'à ~2/3 de la durée d'un pas
+    const swingShift = (currentStep % 2 === 1) ? fx.swing * stepDur * 0.66 : 0;
+    scheduleStep(currentStep, nextNoteTime + swingShift);
+    nextNoteTime += stepDur;
     currentStep = (currentStep + 1) % state.steps;
   }
   timerID = setTimeout(scheduler, LOOKAHEAD);
@@ -550,6 +663,70 @@ document.getElementById('master').addEventListener('input', e => {
   masterGain.gain.value = e.target.value/100;
 });
 
+/* ---------- Contrôles d'effets ---------- */
+document.getElementById('fxReverb').addEventListener('input', e => {
+  fx.reverb = e.target.value/100;
+  liveGraph.reverbWet.gain.value = fx.reverb;
+});
+document.getElementById('fxDelay').addEventListener('input', e => {
+  fx.delay = e.target.value/100;
+  liveGraph.delayWet.gain.value = fx.delay;
+});
+document.getElementById('fxSwing').addEventListener('input', e => {
+  fx.swing = e.target.value/100; // appliqué dans le scheduler
+});
+
+/* ---------- Bouton aléatoire ---------- */
+document.getElementById('randomBtn').addEventListener('click', () => {
+  if (state.tracks.length === 0) { toast('Ajoute d\'abord des instruments'); return; }
+  state.tracks.forEach(track => {
+    const snd = SOUND_BANK[track.soundKey];
+    // densité adaptée : percussions plus fournies que les mélodies
+    const density = snd.type === 'drum' ? 0.32 : 0.18;
+    for (let s = 0; s < state.steps; s++) {
+      track.pattern[s] = Math.random() < density;
+    }
+    // garantit au moins un kick sur le temps fort si c'est un kick
+    if (track.soundKey === 'kick') track.pattern[0] = true;
+  });
+  render();
+  toast('Motif aléatoire généré 🎲');
+});
+
+/* ---------- Raccourci clavier : Espace = play/stop ---------- */
+document.addEventListener('keydown', e => {
+  // ignore si on tape dans un champ texte
+  const tag = (e.target.tagName || '').toLowerCase();
+  if (tag === 'input' || tag === 'textarea' || tag === 'select') return;
+  if (e.code === 'Space') {
+    e.preventDefault();
+    isPlaying ? stop() : play();
+  }
+});
+
+/* ---------- Visualiseur (barres réactives au son) ---------- */
+const vizCanvas = document.getElementById('viz');
+const vizCtx = vizCanvas.getContext('2d');
+const vizData = new Uint8Array(analyser.frequencyBinCount);
+function drawViz() {
+  requestAnimationFrame(drawViz);
+  analyser.getByteFrequencyData(vizData);
+  const w = vizCanvas.width, h = vizCanvas.height;
+  vizCtx.clearRect(0, 0, w, h);
+  const bars = 32;
+  const step = Math.floor(vizData.length / bars);
+  const bw = w / bars;
+  for (let i = 0; i < bars; i++) {
+    const v = vizData[i * step] / 255;
+    const bh = v * h;
+    // dégradé selon la hauteur
+    const hue = 170 + v * 140; // de cyan vers magenta
+    vizCtx.fillStyle = `hsl(${hue}, 90%, ${45 + v*20}%)`;
+    vizCtx.fillRect(i * bw, h - bh, bw - 1.5, bh);
+  }
+}
+drawViz();
+
 document.getElementById('clearBtn').addEventListener('click', () => {
   state.tracks.forEach(t => t.pattern.fill(false));
   render();
@@ -567,13 +744,31 @@ document.getElementById('stepsCount').addEventListener('change', e => {
   render();
 });
 
-// menu d'ajout d'instrument
+// menu d'ajout d'instrument, organisé en groupes
 const addSel = document.getElementById('addInstrument');
-Object.entries(SOUND_BANK).forEach(([key, snd]) => {
-  const opt = document.createElement('option');
-  opt.value = key; opt.textContent = (snd.type==='drum'?'🥁 ':'🎹 ') + snd.name;
-  addSel.appendChild(opt);
-});
+(function fillInstrumentMenu() {
+  const groups = {
+    '🥁 Percussions': [],
+    '🎹 Sons de base': [],
+    '🎵 Gamme complète': []
+  };
+  Object.entries(SOUND_BANK).forEach(([key, snd]) => {
+    if (snd.type === 'drum') groups['🥁 Percussions'].push([key, snd]);
+    else if (snd.scale) groups['🎵 Gamme complète'].push([key, snd]);
+    else groups['🎹 Sons de base'].push([key, snd]);
+  });
+  Object.entries(groups).forEach(([label, items]) => {
+    if (items.length === 0) return;
+    const og = document.createElement('optgroup');
+    og.label = label;
+    items.forEach(([key, snd]) => {
+      const opt = document.createElement('option');
+      opt.value = key; opt.textContent = snd.name;
+      og.appendChild(opt);
+    });
+    addSel.appendChild(og);
+  });
+})();
 addSel.addEventListener('change', e => {
   if (!e.target.value) return;
   state.tracks.push({
@@ -640,12 +835,12 @@ function pickAudioMime() {
   return null;
 }
 
-// Rend le morceau dans un AudioBuffer hors-ligne
+// Rend le morceau dans un AudioBuffer hors-ligne (avec effets + swing)
 async function renderOffline(loops) {
   const secondsPerBeat = 60 / state.bpm;
   const stepDur = 0.25 * secondsPerBeat;     // durée d'un pas (double-croche)
   const loopDur = stepDur * state.steps;     // durée d'une boucle
-  const tail = 0.6;                          // laisse les sons résonner à la fin
+  const tail = 1.2;                          // plus long : laisse réverb/délai résonner
   const total = loopDur * loops + tail;
   const sampleRate = 44100;
 
@@ -654,12 +849,15 @@ async function renderOffline(loops) {
   const offMaster = off.createGain();
   offMaster.gain.value = masterGain.gain.value;
   offMaster.connect(off.destination);
+  // reconstruit la même chaîne d'effets dans le contexte hors-ligne
+  const offGraph = buildAudioGraph(off, offMaster, fx);
 
   for (let loop = 0; loop < loops; loop++) {
     for (let s = 0; s < state.steps; s++) {
-      const t = loop * loopDur + s * stepDur;
+      const swingShift = (s % 2 === 1) ? fx.swing * stepDur * 0.66 : 0;
+      const t = loop * loopDur + s * stepDur + swingShift;
       state.tracks.forEach(track => {
-        if (track.pattern[s] && !track.muted) triggerSound(track, t, offMaster, off);
+        if (track.pattern[s] && !track.muted) triggerSound(track, t, offGraph.input, off);
       });
     }
   }
@@ -785,7 +983,15 @@ const STORE_KEY = 'pulse_presets_v1';
 
 // Morceau de démonstration : utilise les 12 instruments (house mélodique en Do majeur).
 // Installé automatiquement au tout premier lancement pour montrer un exemple complet.
-const DEMO_PRESET = {"name":"✦ Démo — Cité Néon","data":{"bpm":124,"steps":16,"master":75,"tracks":[{"k":"kick","g":95,"m":0,"p":"1000100010001000"},{"k":"snare","g":88,"m":0,"p":"0000100000001000"},{"k":"clap","g":80,"m":0,"p":"0000100000001000"},{"k":"hat","g":70,"m":0,"p":"0010001000100010"},{"k":"openhat","g":60,"m":0,"p":"0000000100000001"},{"k":"tom","g":72,"m":0,"p":"0000000000000011"},{"k":"bass","g":90,"m":0,"p":"1001001010010010"},{"k":"c4","g":75,"m":0,"p":"1000000010000000"},{"k":"e4","g":75,"m":0,"p":"0010000000100000"},{"k":"g4","g":75,"m":0,"p":"0000100000001000"},{"k":"c5","g":78,"m":0,"p":"0000001000000010"},{"k":"pluck","g":55,"m":0,"p":"0001000100010001"}]},"date":0};
+const DEMO_PRESET = {"name":"✦ Démo — Cité Néon","data":{"bpm":124,"steps":16,"master":75,"fx":{"reverb":25,"delay":20,"swing":0},"tracks":[{"k":"kick","g":95,"m":0,"p":"1000100010001000"},{"k":"snare","g":88,"m":0,"p":"0000100000001000"},{"k":"clap","g":80,"m":0,"p":"0000100000001000"},{"k":"hat","g":70,"m":0,"p":"0010001000100010"},{"k":"openhat","g":60,"m":0,"p":"0000000100000001"},{"k":"tom","g":72,"m":0,"p":"0000000000000011"},{"k":"bass","g":90,"m":0,"p":"1001001010010010"},{"k":"c4","g":75,"m":0,"p":"1000000010000000"},{"k":"e4","g":75,"m":0,"p":"0010000000100000"},{"k":"g4","g":75,"m":0,"p":"0000100000001000"},{"k":"c5","g":78,"m":0,"p":"0000001000000010"},{"k":"pluck","g":55,"m":0,"p":"0001000100010001"}]},"date":0};
+
+// Bibliothèque d'exemples préchargés (styles variés) — installés s'ils manquent.
+const DEMO_PRESETS = [
+  DEMO_PRESET,
+  {"name":"✦ Démo — Boom Bap","data":{"bpm":90,"steps":16,"master":78,"fx":{"reverb":15,"delay":10,"swing":35},"tracks":[{"k":"kick","g":95,"m":0,"p":"1000001000100000"},{"k":"snare","g":85,"m":0,"p":"0000100000001000"},{"k":"hat","g":55,"m":0,"p":"1010101010101010"},{"k":"openhat","g":45,"m":0,"p":"0000000000000010"},{"k":"bass","g":88,"m":0,"p":"1000001000110000"},{"k":"note_0","g":60,"m":0,"p":"1000000000100000"},{"k":"note_4","g":58,"m":0,"p":"0000100000000000"},{"k":"note_7","g":58,"m":0,"p":"0000000010000000"}]},"date":0},
+  {"name":"✦ Démo — Nappe Cosmique","data":{"bpm":70,"steps":16,"master":72,"fx":{"reverb":70,"delay":45,"swing":0},"tracks":[{"k":"kick","g":70,"m":0,"p":"1000000010000000"},{"k":"openhat","g":30,"m":0,"p":"0000100000001000"},{"k":"bass","g":75,"m":0,"p":"1000000010000000"},{"k":"note_0","g":55,"m":0,"p":"1000000100000000"},{"k":"note_4","g":50,"m":0,"p":"0010000001000000"},{"k":"note_7","g":50,"m":0,"p":"0000100000010000"},{"k":"note_11","g":48,"m":0,"p":"0000001000000100"},{"k":"note_12","g":52,"m":0,"p":"0000000000100000"}]},"date":0},
+  {"name":"✦ Démo — Techno Berlin","data":{"bpm":130,"steps":16,"master":76,"fx":{"reverb":20,"delay":30,"swing":0},"tracks":[{"k":"kick","g":98,"m":0,"p":"1000100010001000"},{"k":"clap","g":70,"m":0,"p":"0000100000001000"},{"k":"hat","g":50,"m":0,"p":"0010001000100010"},{"k":"openhat","g":45,"m":0,"p":"0001000100010001"},{"k":"tom","g":60,"m":0,"p":"0000000000000001"},{"k":"bass","g":92,"m":0,"p":"1010101010101010"},{"k":"note_12","g":48,"m":0,"p":"0100010001000100"},{"k":"note_19","g":42,"m":0,"p":"0000000100000001"}]},"date":0}
+];
 
 function loadPresets() {
   try {
@@ -808,6 +1014,7 @@ function snapshot() {
     bpm: state.bpm,
     steps: state.steps,
     master: Math.round(masterGain.gain.value * 100),
+    fx: { reverb: Math.round(fx.reverb*100), delay: Math.round(fx.delay*100), swing: Math.round(fx.swing*100) },
     tracks: state.tracks.map(t => ({
       k: t.soundKey,
       g: Math.round(t.gain * 100),
@@ -836,6 +1043,16 @@ function restore(snap) {
     masterGain.gain.value = snap.master / 100;
     document.getElementById('master').value = snap.master;
   }
+  // effets (avec valeurs par défaut à 0 pour les anciens morceaux)
+  const sfx = snap.fx || { reverb: 0, delay: 0, swing: 0 };
+  fx.reverb = (sfx.reverb || 0) / 100;
+  fx.delay  = (sfx.delay  || 0) / 100;
+  fx.swing  = (sfx.swing  || 0) / 100;
+  liveGraph.reverbWet.gain.value = fx.reverb;
+  liveGraph.delayWet.gain.value = fx.delay;
+  document.getElementById('fxReverb').value = Math.round(fx.reverb*100);
+  document.getElementById('fxDelay').value  = Math.round(fx.delay*100);
+  document.getElementById('fxSwing').value  = Math.round(fx.swing*100);
   render();
 }
 
@@ -981,17 +1198,22 @@ document.getElementById('importFile').addEventListener('change', e => {
 
 
 function init() {
-  // S'assure que la démo est présente dans "mes morceaux".
-  // On l'ajoute si elle manque (sans toucher aux morceaux déjà enregistrés).
-  let demoJustAdded = false;
+  // S'assure que les exemples sont présents dans "mes morceaux".
+  // On ajoute ceux qui manquent, sans toucher aux morceaux déjà enregistrés.
+  let wasEmpty = false;
   try {
     const existing = loadPresets();
-    const hasDemo = existing.some(p => p.name === DEMO_PRESET.name);
-    if (!hasDemo) {
-      existing.unshift(DEMO_PRESET); // en tête de liste
-      savePresets(existing);
-      demoJustAdded = (localStorage.getItem(STORE_KEY) !== null && existing.length === 1);
+    wasEmpty = (localStorage.getItem(STORE_KEY) === null) || existing.length === 0;
+    let changed = false;
+    // on parcourt à l'envers pour les insérer en tête dans l'ordre d'origine
+    for (let i = DEMO_PRESETS.length - 1; i >= 0; i--) {
+      const demo = DEMO_PRESETS[i];
+      if (!existing.some(p => p.name === demo.name)) {
+        existing.unshift(demo);
+        changed = true;
+      }
     }
+    if (changed) savePresets(existing);
   } catch(e) { /* stockage indisponible : on continue sans installer */ }
 
   if (location.hash.length > 1 && decodeState(location.hash.slice(1))) {
@@ -1000,8 +1222,8 @@ function init() {
     document.getElementById('bpmVal').textContent = state.bpm;
     document.getElementById('stepsCount').value = state.steps;
     render();
-  } else if (demoJustAdded) {
-    // collection vide au départ → on montre la démo directement à l'écran
+  } else if (wasEmpty) {
+    // toute première visite → on montre la démo principale directement à l'écran
     restore(DEMO_PRESET.data);
   } else {
     state.tracks = defaultTracks();

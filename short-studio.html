@@ -58,11 +58,13 @@ header h1 em{font-style:normal;color:var(--acid)}
   position:absolute;inset:0;width:100%;height:100%;
   object-fit:cover;object-position:center;
   opacity:0;
-  /* Longer, smoother crossfade — incoming fades in over 0.9s */
-  transition:opacity 0.9s cubic-bezier(.25,0,.2,1);
+  transition:opacity 0.18s ease;
   display:block;
+  transform:scale(1) translate(0,0);
 }
 #bgLayer video.active,#bgLayer img.active{opacity:1}
+/* Flash overlay for hard cut */
+#transFlash{position:absolute;inset:0;background:#000;opacity:0;z-index:15;pointer-events:none;transition:opacity 0.06s linear}
 #grain{position:absolute;inset:0;opacity:0.055;pointer-events:none;mix-blend-mode:overlay;
   background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='128' height='128'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.88' numOctaves='4'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E")}
 #scrim{position:absolute;inset:0;background:linear-gradient(to bottom,rgba(0,0,0,0.3) 0%,rgba(0,0,0,0) 25%,rgba(0,0,0,0) 55%,rgba(0,0,0,0.7) 100%);pointer-events:none}
@@ -83,12 +85,31 @@ header h1 em{font-style:normal;color:var(--acid)}
 .lyr.block{display:flex;flex-direction:column;gap:7px;max-width:98%;width:100%}
 .lyr .ln{line-height:1.22;font-family:var(--fd);
   will-change:opacity,transform;
-  transition:opacity .5s cubic-bezier(.2,.7,.2,1),transform .5s cubic-bezier(.2,.7,.2,1);
-  word-break:break-word;white-space:normal}
+  word-break:break-word;white-space:normal;display:inline-block}
 #curBlock .ln{font-size:clamp(12px,4.5vw,24px);font-weight:600;letter-spacing:-0.02em;color:#fff;text-shadow:0 2px 20px rgba(0,0,0,0.9)}
 #curBlock .ln.ttl-xl{font-size:clamp(19px,6vw,32px);font-weight:800;letter-spacing:-0.035em}
 #curBlock .ln.ttl-lg{font-size:clamp(14px,5vw,27px);font-weight:800;letter-spacing:-0.03em}
-.enter{opacity:0;transform:translateY(12px) scale(0.99)}
+#curBlock .ln.ln-big{font-size:clamp(16px,5.5vw,28px);font-weight:800}
+#curBlock .ln.ln-acid{color:#c5f14d;text-shadow:0 0 18px rgba(197,241,77,0.6)}
+#curBlock .ln.ln-bold{font-weight:800}
+
+/* Entrance animations */
+@keyframes hBounce{0%{opacity:0;transform:translateY(30px) scale(0.8)}55%{opacity:1;transform:translateY(-8px) scale(1.06)}75%{transform:translateY(4px) scale(0.97)}90%{transform:translateY(-2px) scale(1.02)}100%{opacity:1;transform:none}}
+@keyframes hPop{0%{opacity:0;transform:scale(0.3) rotate(-6deg)}65%{opacity:1;transform:scale(1.12) rotate(2deg)}85%{transform:scale(0.96) rotate(-1deg)}100%{opacity:1;transform:scale(1) rotate(0)}}
+@keyframes hSlide{0%{opacity:0;transform:translateX(-40px) skewX(8deg)}60%{opacity:1;transform:translateX(6px) skewX(-2deg)}100%{opacity:1;transform:none}}
+@keyframes hStretch{0%{opacity:0;transform:scaleX(0.3) scaleY(1.4)}55%{opacity:1;transform:scaleX(1.08) scaleY(0.94)}100%{opacity:1;transform:none}}
+@keyframes hDrop{0%{opacity:0;transform:translateY(-35px) rotate(3deg)}55%{opacity:1;transform:translateY(6px) rotate(-1deg)}100%{opacity:1;transform:none}}
+/* Constant wobble after entrance */
+@keyframes wobble{0%,100%{transform:scale(1) rotate(0)}25%{transform:scale(1.025) rotate(0.4deg)}75%{transform:scale(0.978) rotate(-0.3deg)}}
+
+.anim-bounce{animation:hBounce 0.48s cubic-bezier(.2,.8,.3,1) both}
+.anim-pop{animation:hPop 0.4s cubic-bezier(.34,1.56,.64,1) both}
+.anim-slide{animation:hSlide 0.42s cubic-bezier(.2,.8,.3,1) both}
+.anim-stretch{animation:hStretch 0.44s cubic-bezier(.2,.8,.3,1) both}
+.anim-drop{animation:hDrop 0.45s cubic-bezier(.2,.8,.3,1) both}
+.ln-wobble{animation:wobble 1.8s ease-in-out infinite}
+
+.enter{opacity:0;transform:translateY(16px) scale(0.85)}
 
 /* Artist — bigger */
 #artistEl{position:absolute;left:6%;bottom:6%;pointer-events:none;z-index:8;
@@ -246,6 +267,7 @@ input[type=range]::-moz-range-thumb{width:12px;height:12px;border:2px solid var(
           <div id="stageText"><div id="curBlock" class="lyr block"></div></div>
           <div id="artistEl"></div>
           <div id="fmtTag">Preview</div>
+          <div id="transFlash"></div>
           <div id="recBadge"><span class="blink"></span>REC</div>
         </div>
       </div>
@@ -457,6 +479,15 @@ document.getElementById('trimDur').addEventListener('input',updateTrim);
 updateTrim();
 
 // ── Lyrics parser ────────────────────────────────────────────────────────────
+// Line modifiers: *text* = bold, #text = acid color, ^text = XL size
+// Can combine: *#^Big bold acid* etc.
+function parseLineText(raw){
+  var isBold=/\*[^*]+\*/.test(raw)||raw.startsWith('*');
+  var isAcid=/#/.test(raw);
+  var isXL=/\^/.test(raw);
+  var text=raw.replace(/[*#^]/g,'').trim();
+  return {text:text,isBold:isBold,isAcid:isAcid,isXL:isXL};
+}
 function parseLines(txt){
   var raw=[];
   txt.split('\n').forEach(function(row){
@@ -467,25 +498,47 @@ function parseLines(txt){
   var bl=[];
   raw.forEach(function(r,i){
     var newB=r.isNew||i===0||(bl.length&&r.t!==bl[bl.length-1].t);
-    if(newB||!bl.length)bl.push({t:r.t,lines:r.text?[r.text]:[],isTitle:r.isTtl});
-    else if(r.text)bl[bl.length-1].lines.push(r.text);
+    var parsed=parseLineText(r.text);
+    if(newB||!bl.length)bl.push({t:r.t,lines:r.text?[parsed]:[],isTitle:r.isTtl});
+    else if(r.text)bl[bl.length-1].lines.push(parsed);
   });
   return bl;
 }
 function blockAt(t){var idx=-1;for(var i=0;i<blocks.length;i++){if(blocks[i].t<=t+0.001)idx=i;else break;}return idx;}
+var HYPE_ANIMS=['anim-bounce','anim-pop','anim-slide','anim-stretch','anim-drop'];
+var animPool=0;
 function paintBlock(el,lines,isTtl,animate){
   el.innerHTML='';
-  var cls=isTtl?(((lines||[]).join(' ').length<=28)?'ttl-xl':'ttl-lg'):'';
-  (lines||[]).forEach(function(ln){
-    if(!ln)return;
+  if(!lines||!lines.length)return;
+  // Pick entrance anim for this block
+  var animCls=HYPE_ANIMS[animPool%HYPE_ANIMS.length];
+  if(animate)animPool++;
+  var allText=(lines||[]).map(function(l){return typeof l==='string'?l:l.text;}).join(' ');
+  var titCls=isTtl?(allText.length<=28?'ttl-xl':'ttl-lg'):'';
+  (lines||[]).forEach(function(ln,i){
+    var lnObj=typeof ln==='string'?{text:ln,isBold:false,isAcid:false,isXL:false}:ln;
+    if(!lnObj.text)return;
     var d=document.createElement('div');
-    d.className='ln'+(cls?' '+cls:'')+(animate?' enter':'');
-    d.textContent=ln;
+    var cls='ln';
+    if(titCls)cls+=' '+titCls;
+    else{
+      if(lnObj.isXL)cls+=' ln-big';
+      if(lnObj.isBold)cls+=' ln-bold';
+      if(lnObj.isAcid)cls+=' ln-acid';
+    }
+    d.className=cls;
+    d.textContent=lnObj.text;
+    if(animate){
+      d.classList.add(animCls);
+      d.style.animationDelay=(i*0.06)+'s';
+      // Add wobble after entrance
+      setTimeout(function(){
+        d.classList.remove(animCls);
+        d.classList.add('ln-wobble');
+      },(480+i*60+300));
+    }
     el.appendChild(d);
   });
-  if(animate)requestAnimationFrame(function(){requestAnimationFrame(function(){
-    el.querySelectorAll('.enter').forEach(function(n){n.classList.remove('enter');});
-  });});
 }
 
 // ── Song title / Artist ──────────────────────────────────────────────────────
@@ -520,19 +573,18 @@ function updateIntro(t){
 }
 
 // ── Media item creation ──────────────────────────────────────────────────────
-var PREROLL_SEC = 1.5; // start buffering next video this many seconds early
-
 function createMediaEl(item){
+  // Create the HTML element and add it to bgLayer (hidden by default)
   var el;
   if(item.type==='video'){
     el=document.createElement('video');
     el.src=item.url;
     el.muted=true;el.playsInline=true;el.preload='auto';
-    // Seamless loop: seek back to 0 just before capDur
+    // Loop within capDur: use timeupdate to restart
     el.addEventListener('timeupdate',function(){
-      if(el._looping && el.currentTime>=item.capDur-0.12){
+      if(el._active && el.currentTime>=item.capDur-0.08){
         el.currentTime=0;
-        // play() already running (loop), no need to call again
+        el.play();
       }
     });
   } else {
@@ -540,19 +592,19 @@ function createMediaEl(item){
     el.src=item.url;
   }
   el._active=false;
-  el._looping=false;
-  el._prerolled=false;
   bgLayer.appendChild(el);
   item.el=el;
 }
 
 // ── mountBg — (re)build bgLayer ──────────────────────────────────────────────
 function mountBg(){
+  // Remove all existing media els from bgLayer
   mediaItems.forEach(function(m){if(m.el&&m.el.parentNode===bgLayer)bgLayer.removeChild(m.el);m.el=null;});
-  if(!mediaItems.length){hasBg=false;curMedIdx=-1;renderVidList();refreshVTap();return;}
+  if(!mediaItems.length){hasBg=false;curMedIdx=-1;return;}
   hasBg=true;
   mediaItems.forEach(function(m){createMediaEl(m);});
   curMedIdx=-1;
+  // Immediately show the one that should be active now
   var mi=medAt(clampedRel());
   if(mi>=0)activateMedia(mi,playing);
   renderVidList();
@@ -565,71 +617,106 @@ function medAt(relT){
   return idx;
 }
 
-// ── Pre-roll: silently start next video before its switch time ────────────────
-function prerollMedia(idx){
-  if(idx<0||idx>=mediaItems.length)return;
-  var m=mediaItems[idx];
-  if(!m.el||m._prerolled||m.type!=='video')return;
-  m._prerolled=true;
-  // Play silently at opacity 0 so first frame is decoded
-  m.el.currentTime=0;
-  var pr=m.el.play();
-  if(pr&&pr.catch)pr.catch(function(){});
+// ── WebAudio switch sound ────────────────────────────────────────────────────
+var audioCtx=null;
+function playSwitchSound(){
+  try{
+    if(!audioCtx)audioCtx=new(window.AudioContext||window.webkitAudioContext)();
+    // Sharp click: short white noise burst + low thud
+    var buf=audioCtx.createBuffer(1,audioCtx.sampleRate*0.08,audioCtx.sampleRate);
+    var data=buf.getChannelData(0);
+    for(var i=0;i<data.length;i++){
+      var env=Math.exp(-i/(audioCtx.sampleRate*0.018));
+      data[i]=(Math.random()*2-1)*env;
+    }
+    var src=audioCtx.createBufferSource();
+    src.buffer=buf;
+    var gain=audioCtx.createGain();gain.gain.value=0.28;
+    src.connect(gain);gain.connect(audioCtx.destination);
+    src.start();
+    // Low thud
+    var osc=audioCtx.createOscillator();
+    var g2=audioCtx.createGain();
+    osc.frequency.setValueAtTime(90,audioCtx.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(28,audioCtx.currentTime+0.1);
+    g2.gain.setValueAtTime(0.35,audioCtx.currentTime);
+    g2.gain.exponentialRampToValueAtTime(0.001,audioCtx.currentTime+0.12);
+    osc.connect(g2);g2.connect(audioCtx.destination);
+    osc.start();osc.stop(audioCtx.currentTime+0.12);
+  }catch(e){}
 }
 
-// ── Activate a media item with crossfade ─────────────────────────────────────
-var _activatePending=false;
-function activateMedia(idx,autoPlay){
+// ── Hard-cut transition with flash + slide ───────────────────────────────────
+var transFlashEl=document.getElementById('transFlash');
+function doHardTransition(incoming,outgoing,play){
+  playSwitchSound();
+  // 1. Flash black
+  transFlashEl.style.transition='none';
+  transFlashEl.style.opacity='1';
+  // 2. Slide outgoing to bottom-left
+  if(outgoing&&outgoing.el){
+    outgoing.el.style.transition='transform 0.22s cubic-bezier(.4,0,.8,1),opacity 0.22s ease';
+    outgoing.el.style.transform='translate(-18%,22%) scale(0.88)';
+    outgoing.el.style.opacity='0';
+  }
+  // 3. After 1 frame, start incoming
+  requestAnimationFrame(function(){
+    if(incoming.type==='video'&&incoming.el){
+      incoming.el.currentTime=0;
+      if(play){var pr=incoming.el.play();if(pr&&pr.catch)pr.catch(function(){});}
+      incoming.el._active=true;
+    }
+    if(incoming.el){
+      incoming.el.style.transition='none';
+      incoming.el.style.transform='translate(12%,-10%) scale(1.06)';
+      incoming.el.style.opacity='0';
+      incoming.el.classList.add('active');
+      requestAnimationFrame(function(){
+        incoming.el.style.transition='transform 0.28s cubic-bezier(.2,.8,.3,1),opacity 0.18s ease';
+        incoming.el.style.transform='translate(0,0) scale(1)';
+        incoming.el.style.opacity='1';
+      });
+    }
+    // Fade out flash
+    setTimeout(function(){
+      transFlashEl.style.transition='opacity 0.12s ease';
+      transFlashEl.style.opacity='0';
+    },40);
+    // Clean up outgoing
+    setTimeout(function(){
+      if(outgoing&&outgoing.el){
+        outgoing.el._active=false;
+        outgoing.el.classList.remove('active');
+        outgoing.el.style.transform='';
+        outgoing.el.style.opacity='';
+        outgoing.el.style.transition='';
+        if(outgoing.type==='video')outgoing.el.pause();
+      }
+    },300);
+  });
+}
+
+// ── Activate a media item ────────────────────────────────────────────────────
+function activateMedia(idx,play){
   if(idx===curMedIdx||idx<0||idx>=mediaItems.length)return;
   var incoming=mediaItems[idx];
   var outgoing=curMedIdx>=0?mediaItems[curMedIdx]:null;
-  var prevIdx=curMedIdx;
-  curMedIdx=idx; // set early so no double-call from render loop
-
-  function doSwitch(){
-    // Seek to 0 and ensure playing (pre-roll may have advanced it)
+  // Pre-roll: load incoming video
+  if(incoming.type==='video'&&incoming.el){
+    incoming.el._active=true;
+  }
+  if(curMedIdx>=0){
+    doHardTransition(incoming,outgoing,play);
+  } else {
+    // First media — no transition, just show
     if(incoming.type==='video'&&incoming.el){
       incoming.el.currentTime=0;
-      incoming.el._looping=true;
-      incoming.el._active=true;
-      if(autoPlay||playing){var pr=incoming.el.play();if(pr&&pr.catch)pr.catch(function(){});}
+      if(play){var pr=incoming.el.play();if(pr&&pr.catch)pr.catch(function(){});}
     }
-    // Crossfade in
-    incoming.el&&incoming.el.classList.add('active');
-
-    // Fade out previous
-    if(outgoing&&outgoing.el&&prevIdx!==idx){
-      outgoing.el._active=false;
-      outgoing.el._looping=false;
-      // Remove active class after slight delay so both are visible during fade
-      setTimeout(function(){
-        outgoing.el&&outgoing.el.classList.remove('active');
-        if(outgoing.type==='video'&&outgoing.el){
-          outgoing.el.pause();
-          outgoing.el._prerolled=false; // allow re-preroll if needed
-        }
-      },700);
-    }
-    renderVidList();
+    if(incoming.el)incoming.el.classList.add('active');
   }
-
-  if(incoming.type==='video'&&incoming.el){
-    // If already pre-rolled (playing silently), switch immediately
-    if(incoming.el.readyState>=3||incoming.el._prerolled){
-      doSwitch();
-    } else {
-      // Not ready yet — wait for enough data, fallback after 300ms
-      var done=false;
-      function onReady(){if(done)return;done=true;doSwitch();}
-      incoming.el.addEventListener('canplay',onReady,{once:true});
-      setTimeout(onReady,300);
-      // Start loading now
-      incoming.el.currentTime=0;
-      var pr2=incoming.el.play();if(pr2&&pr2.catch)pr2.catch(function(){});
-    }
-  } else {
-    doSwitch();
-  }
+  curMedIdx=idx;
+  renderVidList();
 }
 
 // ── Video list render ────────────────────────────────────────────────────────
@@ -753,13 +840,10 @@ function setPlay(p){
   playing=p;
   playIco.innerHTML=p?'<rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/>':'<polygon points="6 4 20 12 6 20 6 4"/>';
   if(hasAudio){if(p){if(audio.currentTime<trimStart)audio.currentTime=trimStart;audio.play();}else audio.pause();}
-  // Play/pause the currently active video element
-  mediaItems.forEach(function(m){
-    if(m.el&&m.type==='video'&&m.el._active){
-      if(p){var pr=m.el.play();if(pr&&pr.catch)pr.catch(function(){});}
-      else m.el.pause();
-    }
-  });
+  if(curMedIdx>=0&&mediaItems[curMedIdx]&&mediaItems[curMedIdx].type==='video'&&mediaItems[curMedIdx].el){
+    var v=mediaItems[curMedIdx].el;
+    if(p){var pr=v.play();if(pr&&pr.catch)pr.catch(function(){});}else v.pause();
+  }
 }
 playBtn.addEventListener('click',function(){setPlay(!playing);});
 audio.addEventListener('timeupdate',function(){if(playing&&audio.currentTime>=trimEndT()){audio.pause();audio.currentTime=trimStart;setPlay(false);}});
@@ -778,26 +862,13 @@ setInterval(function(){
 // ── Main render ───────────────────────────────────────────────────────────────
 function render(){
   var rel=clampedRel();
-
-  // Pre-roll: start next video PREROLL_SEC before its switch time
-  var nextIdx=medAt(rel)+1;
-  if(nextIdx>0&&nextIdx<mediaItems.length){
-    var nextM=mediaItems[nextIdx];
-    if(!nextM._prerolled&&(nextM.startT-rel)<=PREROLL_SEC){
-      prerollMedia(nextIdx);
-    }
-  }
-
-  // Activate current media
   var mi=medAt(rel);
   if(mi>=0&&mi!==curMedIdx)activateMedia(mi,playing);
-
-  // Lyrics
   var bi=blockAt(rel);
   if(bi!==lastBIdx){
     var b=bi>=0?blocks[bi]:null;
     paintBlock(curBlock,b?b.lines:[],b?b.isTitle:false,true);
-    if(!blocks.length)curBlock.innerHTML='<div class="ln" style="opacity:.35;font-size:13px">Ajoute des paroles \u2192</div>';
+    if(!blocks.length)curBlock.innerHTML='<div class="ln" style="opacity:.35;font-size:13px">Ajoute des paroles →</div>';
     lastBIdx=bi;
   }
   updateSongTitle(rel);updateArtist(rel);updateIntro(rel);
@@ -912,17 +983,14 @@ document.getElementById('recYT').addEventListener('click',function(){startRec('y
 document.getElementById('recTT').addEventListener('click',function(){startRec('tt');});
 
 // coverDraw = object-fit:cover on canvas (NO letterboxing, fills full frame)
-function coverDraw(ctx,src,CW,CH){
+function coverDraw(ctx,src,x,y,CW,CH){
+  if(x===undefined){x=0;y=0;} // backward compat
   var sw=src.videoWidth||src.naturalWidth||0;
   var sh=src.videoHeight||src.naturalHeight||0;
-  if(!sw||!sh){ctx.fillStyle='#000';ctx.fillRect(0,0,CW,CH);return;}
-  var scale=Math.max(CW/sw,CH/sh); // COVER: scale up to fill
+  if(!sw||!sh){ctx.fillStyle='#000';ctx.fillRect(x,y,CW,CH);return;}
+  var scale=Math.max(CW/sw,CH/sh);
   var dw=sw*scale,dh=sh*scale;
-  var dx=(CW-dw)/2,dy=(CH-dh)/2;
-  ctx.drawImage(src,dx,dy,dw,dh);
-}
-
-function startRec(fmt){
+  ctx.drawImage(src,x+(CW-dw)/2,y+(CH-dh)/2,function startRec(fmt){
   if(recording){stopRec();return;}
   if(!('MediaRecorder' in window)){alert('Utilise Chrome pour l\'enregistrement.');return;}
   fmtTag.textContent=fmt==='yt'?'YouTube Short':'TikTok';
@@ -943,101 +1011,194 @@ function startRec(fmt){
     a.click();
   };
 
-  // Independent rec-side media: each video loops within capDur
+  // ── Canvas-side media elements (independent of preview) ───────────────────
   var recMedia=mediaItems.map(function(m){
-    var el;
-    if(m.type==='video'){
-      el=document.createElement('video');el.src=m.url;el.muted=true;el.playsInline=true;el.preload='auto';
-    } else {
-      el=document.createElement('img');el.src=m.url;
+    if(m.type!=='video')return {type:'image',el:null,img:new Image(),startT:m.startT,capDur:m.capDur||MAX_VID_DUR};
+    var v=document.createElement('video');
+    v.muted=true;v.playsInline=true;v.preload='auto';v.src=m.url;
+    return {type:'video',el:v,startT:m.startT,capDur:m.capDur||MAX_VID_DUR,started:false};
+  });
+  recMedia.forEach(function(rm,i){if(rm.type==='image')rm.img.src=mediaItems[i].url;});
+
+  // Preload all videos
+  recMedia.forEach(function(rm){
+    if(rm.type==='video'){
+      rm.el.currentTime=0;
+      var p=rm.el.play();if(p&&p.catch)p.catch(function(){});
+      rm.el.addEventListener('canplay',function(){if(!rm.started)rm.el.pause();},{once:true});
     }
-    return {type:m.type,startT:m.startT,capDur:m.capDur||MAX_VID_DUR,el:el,started:false};
   });
 
-  if(hasAudio){audio.currentTime=trimStart;}else{demoClock=trimStart;}
-  var recWall=performance.now();
+  // ── Animation helpers ─────────────────────────────────────────────────────
+  function easeOutElastic(t){
+    if(t<=0)return 0;if(t>=1)return 1;
+    return Math.pow(2,-10*t)*Math.sin((t*10-0.75)*(2*Math.PI)/3)+1;
+  }
+  function easeOutBack(t){var c=1.70158+1;return 1+c*Math.pow(t-1,3)+(c-1)*Math.pow(t-1,2);}
+  function easeOutCubic(t){return 1-Math.pow(1-t,3);}
+  function easeOutQuad(t){return 1-(1-t)*(1-t);}
+
+  // ── Canvas transition state ───────────────────────────────────────────────
   var lastRecMedIdx=-1;
-  var raf;
+  var transStartWall=-1;   // when current transition started
+  var TRANS_DUR=0.22;      // seconds of hard-cut transition
+  var transOldEl=null;     // outgoing media snapshot source
+  var transOldPos={tx:0,ty:0,scale:1,alpha:1}; // outgoing position during trans
+  var transNewEl=null;     // incoming element
+  var transActive=false;
+
+  // ── Lyrics animation state ────────────────────────────────────────────────
+  var recLastBIdx=-1;
+  var recBlockStart=-1;    // wall-clock time when block appeared
+  var recAnimPool=0;
+  var REC_ANIMS=['bounce','pop','slide','stretch','drop'];
+  var ANIM_DUR=0.48;       // seconds for entrance anim
 
   function recMedAt(rel){
     var idx=-1;for(var i=0;i<recMedia.length;i++){if(recMedia[i].startT<=rel+0.001)idx=i;else break;}return idx;
   }
 
+  function drawMedia(src,CW,CH,alpha,tx,ty,scale){
+    if(alpha<=0)return;
+    ctx.save();
+    ctx.globalAlpha=Math.min(1,alpha);
+    ctx.translate(CW/2+tx,CH/2+ty);
+    ctx.scale(scale,scale);
+    if(src.type==='video'&&src.el&&src.el.readyState>=2){
+      coverDraw(ctx,src.el,-CW/2,-CH/2,CW,CH);
+    } else if(src.type==='image'&&src.img&&src.img.complete&&src.img.naturalWidth>0){
+      coverDraw(ctx,src.img,-CW/2,-CH/2,CW,CH);
+    } else {
+      ctx.fillStyle='#000';ctx.fillRect(-CW/2,-CH/2,CW,CH);
+    }
+    ctx.restore();
+  }
+
+  function drawAnimLine(text,x,y,progress,animType,fontStr,color,isAcid){
+    var p=Math.min(1,Math.max(0,progress));
+    var alpha=1,sx=1,sy=1,tx=0,ty=0,rot=0;
+    if(animType==='bounce'){
+      var ep=easeOutElastic(p);ty=(1-ep)*38;alpha=Math.min(1,p*2.5);
+      sx=0.85+easeOutBack(Math.min(1,p*1.3))*0.15;sy=sx;
+    } else if(animType==='pop'){
+      var pp=easeOutBack(p);sx=0.3+pp*0.7;sy=sx;alpha=Math.min(1,p*2.2);
+      rot=(1-p)*-0.12;
+    } else if(animType==='slide'){
+      var sp=easeOutCubic(p);tx=(1-sp)*-55;alpha=Math.min(1,p*2);
+      sx=0.88+sp*0.12;sy=1;
+    } else if(animType==='stretch'){
+      var stp=easeOutCubic(p);sx=0.3+stp*0.7;sy=1.5-stp*0.5;alpha=Math.min(1,p*1.8);
+    } else { // drop
+      var dp=easeOutBack(p);ty=(1-dp)*-42;alpha=Math.min(1,p*2.2);
+      rot=(1-p)*0.1;
+    }
+    // Wobble: constant gentle pulse after entrance
+    if(p>=1){
+      var w=performance.now()/1000;
+      sx=1+Math.sin(w*3.8+x*0.01)*0.022;
+      sy=1+Math.cos(w*3.2+y*0.01)*0.018;
+      rot=Math.sin(w*2.6)*0.008;
+    }
+    ctx.save();
+    ctx.globalAlpha=alpha;
+    ctx.translate(x+tx,y+ty);
+    ctx.rotate(rot);
+    ctx.scale(sx,sy);
+    ctx.textAlign='center';ctx.textBaseline='middle';
+    ctx.font=fontStr;
+    if(isAcid){
+      // Glow effect for acid lines
+      ctx.shadowColor='rgba(197,241,77,0.7)';ctx.shadowBlur=32;
+      ctx.fillStyle='#c5f14d';
+    } else {
+      ctx.shadowColor='rgba(0,0,0,0.92)';ctx.shadowBlur=44;
+      ctx.fillStyle=color||'#fff';
+    }
+    ctx.fillText(text,0,0);
+    ctx.restore();
+  }
+
+  if(hasAudio){audio.currentTime=trimStart;}else{demoClock=trimStart;}
+  var recWall=performance.now();
+  var raf;
+
   function frame(){
-    var elapsed=(performance.now()-recWall)/1000;
+    var now=performance.now();
+    var elapsed=(now-recWall)/1000;
     if(elapsed>=trimDur){stopRec();return;}
     ctx.clearRect(0,0,CW,CH);
 
-    // BG — pure black if no media yet
+    // ── Background with hard-cut transition ──────────────────────────────────
     var mi=recMedAt(elapsed);
-    if(mi>=0&&mi<recMedia.length){
+
+    if(mi>=0&&mi!==lastRecMedIdx){
+      // New media — start transition
+      if(lastRecMedIdx>=0){
+        transActive=true;
+        transStartWall=now;
+        transOldEl=recMedia[lastRecMedIdx];
+        transNewEl=recMedia[mi];
+      }
+      // Start incoming video
       var cm=recMedia[mi];
-      if(mi!==lastRecMedIdx){
-        // Pause outgoing
-        if(lastRecMedIdx>=0&&recMedia[lastRecMedIdx].type==='video'){
-          recMedia[lastRecMedIdx].el.pause();
-          recMedia[lastRecMedIdx].el._recActive=false;
-        }
-        // Start incoming from 0
-        if(cm.type==='video'){
-          cm.el.currentTime=0;
-          var pp=cm.el.play();if(pp&&pp.catch)pp.catch(function(){});
-          cm.started=true;
-          cm.el._recActive=true;
-        }
-        lastRecMedIdx=mi;
+      if(cm.type==='video'&&!cm.started){
+        cm.el.currentTime=0;
+        var pp=cm.el.play();if(pp&&pp.catch)pp.catch(function(){});
+        cm.started=true;
       }
-      // Pre-roll next video in rec
-      var nextRecIdx=mi+1;
-      if(nextRecIdx<recMedia.length&&!recMedia[nextRecIdx]._prerolled){
-        var nextRec=recMedia[nextRecIdx];
-        if(nextRec.type==='video'&&(nextRec.startT-elapsed)<=1.5){
-          nextRec._prerolled=true;
-          nextRec.el.currentTime=0;
-          var prn=nextRec.el.play();if(prn&&prn.catch)prn.catch(function(){});
-          // Pause immediately so it's buffered but not audible
-          nextRec.el.addEventListener('canplay',function(){
-            if(!nextRec.el._recActive)nextRec.el.pause();
-          },{once:true});
-        }
-      }
-      // Loop video within capDur
-      if(cm.type==='video'&&cm.el.readyState>=2){
-        if(cm.el.currentTime>=cm.capDur-0.1){cm.el.currentTime=0;cm.el.play();}
-        coverDraw(ctx,cm.el,CW,CH);
-      } else if(cm.type==='image'&&cm.el.complete&&cm.el.naturalWidth>0){
-        coverDraw(ctx,cm.el,CW,CH);
-      } else {
-        // Still loading — black
+      lastRecMedIdx=mi;
+    }
+
+    if(transActive){
+      var tp=(now-transStartWall)/1000/TRANS_DUR; // 0→1
+      if(tp>=1){transActive=false;tp=1;}
+      // Flash black frame at start
+      if(tp<0.15){
         ctx.fillStyle='#000';ctx.fillRect(0,0,CW,CH);
+      } else {
+        var tp2=(tp-0.15)/0.85;
+        // Draw incoming: slides in from top-right
+        var inScale=0.88+easeOutCubic(tp2)*0.12;
+        var inTx=CW*0.12*(1-easeOutCubic(tp2));
+        var inTy=-CH*0.1*(1-easeOutCubic(tp2));
+        drawMedia(transNewEl,CW,CH,easeOutQuad(tp2),inTx,inTy,inScale);
+        // Draw outgoing: slides out to bottom-left, shrinks
+        var outScale=1-tp2*0.12;
+        var outTx=-CW*0.18*tp2;
+        var outTy=CH*0.22*tp2;
+        drawMedia(transOldEl,CW,CH,1-easeOutQuad(tp2)*1.2,outTx,outTy,outScale);
       }
     } else {
-      // No media yet — solid black (NO gradient)
-      ctx.fillStyle='#000';ctx.fillRect(0,0,CW,CH);
+      // Normal: draw current media
+      if(mi>=0&&mi<recMedia.length){
+        var cur2=recMedia[mi];
+        if(cur2.type==='video'&&cur2.el&&cur2.el.readyState>=2){
+          // Cap-based loop
+          if(cur2.el.currentTime>=cur2.capDur-0.1){cur2.el.currentTime=0;cur2.el.play();}
+          coverDraw(ctx,cur2.el,0,0,CW,CH);
+        } else if(cur2.type==='image'&&cur2.img&&cur2.img.complete&&cur2.img.naturalWidth>0){
+          coverDraw(ctx,cur2.img,0,0,CW,CH);
+        } else {
+          ctx.fillStyle='#000';ctx.fillRect(0,0,CW,CH);
+        }
+      } else {
+        ctx.fillStyle='#000';ctx.fillRect(0,0,CW,CH);
+      }
     }
 
     // Scrim
     var sg=ctx.createLinearGradient(0,0,0,CH);
-    sg.addColorStop(0,'rgba(0,0,0,0.3)');sg.addColorStop(0.25,'rgba(0,0,0,0)');
-    sg.addColorStop(0.55,'rgba(0,0,0,0)');sg.addColorStop(1,'rgba(0,0,0,0.7)');
+    sg.addColorStop(0,'rgba(0,0,0,0.32)');sg.addColorStop(0.25,'rgba(0,0,0,0)');
+    sg.addColorStop(0.58,'rgba(0,0,0,0)');sg.addColorStop(1,'rgba(0,0,0,0.72)');
     ctx.fillStyle=sg;ctx.fillRect(0,0,CW,CH);
 
-    // Intro
-    if(introActive()&&elapsed<INTRO_DUR){
-      var p2=elapsed/INTRO_DUR,bA=(1-p2)*0.84;
-      var ilg=ctx.createLinearGradient(0,0,0,CH);
-      ilg.addColorStop(0,'rgba(230,225,255,'+bA.toFixed(3)+')');
-      ilg.addColorStop(0.4,'rgba(155,150,210,'+(bA*0.35).toFixed(3)+')');
-      ilg.addColorStop(1,'rgba(0,0,0,0)');
-      ctx.fillStyle=ilg;ctx.fillRect(0,0,CW,CH);
-    }
-
     // Song title
-    var sti=parseFloat(document.getElementById('inSongTitleIn').value)||1;
-    var stName=document.getElementById('inSongTitle').value||'';
-    if(elapsed>=sti&&stName){
-      var stOp=Math.min(1,(elapsed-sti)/0.8);
-      ctx.save();ctx.globalAlpha=stOp;ctx.textAlign='center';ctx.textBaseline='middle';
+    var stName=(document.getElementById('inSongTitle').value||'').trim();
+    var stIn=parseFloat(document.getElementById('inSongTitleIn').value)||1;
+    if(stName&&elapsed>=stIn){
+      var stOp=Math.min(1,(elapsed-stIn)/0.8);
+      ctx.save();ctx.globalAlpha=stOp;
+      ctx.textAlign='center';ctx.textBaseline='middle';
       ctx.shadowColor='rgba(0,0,0,0.95)';ctx.shadowBlur=18;
       ctx.font='700 52px "Bricolage Grotesque",sans-serif';
       var stW=ctx.measureText(stName).width;
@@ -1047,26 +1208,47 @@ function startRec(fmt){
       ctx.restore();
     }
 
-    // Lyrics
-    var bi2=blockAt(elapsed);var b=bi2>=0?blocks[bi2]:null;
-    var cur=b?b.lines:[];var isTtl=b?b.isTitle:false;
-    if(cur.length){
-      ctx.save();ctx.textAlign='center';ctx.textBaseline='middle';
-      ctx.shadowColor='rgba(0,0,0,.9)';ctx.shadowBlur=38;ctx.fillStyle='#fff';
-      if(isTtl){
-        var cc=cur.join(' ').length;var fs2=cc<=28?148:cc<=48?112:84;
-        ctx.font='800 '+fs2+'px "Bricolage Grotesque",sans-serif';
-        var lh2=fs2*1.22,sy2=CH/2-((cur.length-1)*lh2)/2;
-        cur.forEach(function(ln,i){ctx.fillText(ln,CW/2,sy2+i*lh2);});
-      } else {
-        ctx.font='600 96px "Bricolage Grotesque",sans-serif';
-        var lh3=114,sy3=CH/2-((cur.length-1)*lh3)/2;
-        cur.forEach(function(ln,i){ctx.fillText(ln,CW/2,sy3+i*lh3);});
-      }
-      ctx.restore();
+    // ── Lyrics with full frame-by-frame animation ─────────────────────────────
+    var bi2=blockAt(elapsed);
+    var b2=bi2>=0?blocks[bi2]:null;
+    var curLines=b2?b2.lines:[];
+    var isTtl=b2?b2.isTitle:false;
+
+    if(bi2!==recLastBIdx){
+      recLastBIdx=bi2;
+      recBlockStart=now;
+      recAnimPool++;
     }
 
-    // Artist — bigger in export (38px instead of 28px)
+    if(curLines.length){
+      var blockAge=(now-recBlockStart)/1000;
+      var animType=REC_ANIMS[recAnimPool%REC_ANIMS.length];
+
+      if(isTtl){
+        var allTxt=curLines.map(function(l){return typeof l==='string'?l:l.text;}).join(' ');
+        var fs3=allTxt.length<=28?148:allTxt.length<=48?112:84;
+        var fontStr3='800 '+fs3+'px "Bricolage Grotesque",sans-serif';
+        var lh3=fs3*1.22;
+        var sy3=CH/2-((curLines.length-1)*lh3)/2;
+        curLines.forEach(function(ln,i){
+          var txt=typeof ln==='string'?ln:ln.text;
+          var prog=(blockAge-i*0.06)/ANIM_DUR;
+          drawAnimLine(txt,CW/2,sy3+i*lh3,prog,animType,fontStr3,'#fff',false);
+        });
+      } else {
+        var yOff=CH/2-((curLines.length-1)*120)/2;
+        curLines.forEach(function(ln,i){
+          var lnObj=typeof ln==='string'?{text:ln,isBold:false,isAcid:false,isXL:false}:ln;
+          var fs4=lnObj.isXL?116:96;
+          var fw4=lnObj.isBold?'800':'700';
+          var fontStr4=fw4+' '+fs4+'px "Bricolage Grotesque",sans-serif';
+          var prog=(blockAge-i*0.06)/ANIM_DUR;
+          drawAnimLine(lnObj.text,CW/2,yOff+i*120,prog,animType,fontStr4,lnObj.color||'#fff',lnObj.isAcid);
+        });
+      }
+    }
+
+    // Artist
     var inT2=parseFloat(document.getElementById('inArtistIn').value)||4;
     var outT2=parseFloat(document.getElementById('inArtistOut').value)||55;
     var aName=(document.getElementById('inArtist').value||'').toUpperCase();
@@ -1080,6 +1262,7 @@ function startRec(fmt){
       ctx.fillText(aName,70,CH-80);
       ctx.restore();
     }
+
     raf=requestAnimationFrame(frame);
   }
 
@@ -1089,8 +1272,12 @@ function startRec(fmt){
     ctx.quadraticCurveTo(x,y+h,x,y+h-r);ctx.lineTo(x,y+r);ctx.quadraticCurveTo(x,y,x+r,y);ctx.closePath();
   }
 
+  // Preload delay then start
+  setTimeout(function(){
+    frame();
+    mediaRec.start(200);
+  },400);
   mediaRec._stop=function(){cancelAnimationFrame(raf);};
-  mediaRec.start(200);
   recording=true;
   document.getElementById('recYT').disabled=true;document.getElementById('recTT').disabled=true;
   var stopBtn=document.createElement('button');stopBtn.className='stop-btn';stopBtn.id='stopBtn';
@@ -1099,7 +1286,7 @@ function startRec(fmt){
   document.getElementById('recYT').parentNode.appendChild(stopBtn);
   recBadge.style.display='flex';
   if(hasAudio){audio.currentTime=trimStart;setPlay(true);}
-  frame();
+}frame();
 }
 
 function stopRec(){
